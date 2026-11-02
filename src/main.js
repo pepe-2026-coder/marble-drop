@@ -6,6 +6,7 @@
 import "./game/engine.js";
 import { account, economy } from "./account.js";
 import { audio, vibrate } from "./audio.js";
+import { SKIN_LIST, getSkin, skinCssVars } from "./game/skins.js";
 import { toast } from "./ui/toast.js";
 
 const $ = (id) => document.getElementById(id);
@@ -31,6 +32,8 @@ const ticketExchangeOne = $("ticketExchangeOne");
 const ticketExchangeAll = $("ticketExchangeAll");
 const coinBuySmall = $("coinBuySmall");
 const coinBuyLarge = $("coinBuyLarge");
+const skinGrid = $("skinGrid");
+const skinEquippedName = $("skinEquippedName");
 
 const volumeRange = $("volumeRange");
 const volumeValue = $("volumeValue");
@@ -57,6 +60,8 @@ function showScreen(name) {
     if (key === name) screen.scrollTop = 0;
   });
   document.body.dataset.screen = name;
+
+  if (name === "shop") renderSkinShop(account.snapshot());
 
   if (name === "game") {
     requestAnimationFrame(() => {
@@ -101,6 +106,8 @@ function syncAccount(state) {
   muteToggle.setAttribute("aria-pressed", String(state.settings.muted));
   hapticsToggle.setAttribute("aria-pressed", String(state.settings.haptics));
   payoutToggle.setAttribute("aria-pressed", String(state.settings.payoutAnimation));
+
+  if (currentScreen === "shop") renderSkinShop(state);
 }
 
 account.subscribe(syncAccount);
@@ -213,6 +220,117 @@ $("shopReliefBtn").addEventListener("click", () => {
   }
 });
 
+/* ── Mother-ball skins ───────────────────────────────────── */
+
+function renderSkinShop(state) {
+  const equipped = getSkin(state.skins.equipped);
+  skinEquippedName.textContent = `${equipped.name} · ${equipped.en}`;
+
+  skinGrid.innerHTML = SKIN_LIST.map((skin) => {
+    const owned = state.skins.owned.includes(skin.id);
+    const isEquipped = state.skins.equipped === skin.id;
+    const canAfford = state.tickets >= skin.price;
+    const priceLabel = skin.price > 0 ? `${skin.price} 彩票` : "免费领取";
+
+    let action;
+    if (isEquipped) {
+      action = `<button class="skin-btn is-equipped" type="button" disabled>使用中</button>`;
+    } else if (owned) {
+      action = `<button class="skin-btn" type="button" data-skin-equip="${skin.id}">装备</button>`;
+    } else {
+      action = `<button class="skin-btn is-buy" type="button" data-skin-buy="${skin.id}" ${canAfford ? "" : "disabled"} title="${canAfford ? "用彩票解锁" : "彩票不足"}">${priceLabel}</button>`;
+    }
+
+    const cardClass = [
+      "skin-card",
+      isEquipped ? "is-equipped" : "",
+      owned ? "is-owned" : "is-locked",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    return `
+      <article class="${cardClass}" data-skin-card="${skin.id}">
+        <span class="skin-ball" style="${skinCssVars(skin)}" aria-hidden="true">
+          <i class="skin-ball-pattern" data-pattern="${skin.ball.pattern}"></i>
+        </span>
+        <div class="skin-card-body">
+          <div class="skin-card-head">
+            <span class="skin-name">${skin.name}</span>
+            <span class="skin-en">${skin.en}</span>
+          </div>
+          <p class="skin-tagline">${skin.tagline}</p>
+          <div class="skin-chips">
+            <span class="skin-chip">${skin.particleLabel}</span>
+            <span class="skin-chip">${skin.soundLabel}</span>
+            ${isEquipped ? '<span class="skin-chip is-current">使用中</span>' : ""}
+          </div>
+        </div>
+        <div class="skin-card-foot">
+          <button class="skin-try" type="button" data-skin-preview="${skin.id}" aria-label="试听${skin.name}母球音效">试听</button>
+          ${action}
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
+function previewSkin(id) {
+  audio.init();
+  audio.previewSkin(id);
+  const card = skinGrid.querySelector(`[data-skin-card="${id}"]`);
+  if (!card) return;
+  card.classList.remove("is-auditioning");
+  void card.offsetWidth;
+  card.classList.add("is-auditioning");
+  window.setTimeout(() => card.classList.remove("is-auditioning"), 760);
+}
+
+function equipSkin(id) {
+  const skin = getSkin(id);
+  if (!account.ownsSkin(id)) {
+    toast("这只母球还没有解锁");
+    return;
+  }
+  const changed = account.equipSkin(id);
+  audio.init();
+  audio.click();
+  toast(changed ? `已装备 ${skin.name}母球` : `${skin.name}母球正在使用`);
+}
+
+function buySkin(id) {
+  const skin = getSkin(id);
+  if (!account.ownsSkin(id)) {
+    const result = account.purchaseSkin(id, skin.price);
+    if (!result.ok) {
+      const missing = Math.max(0, skin.price - account.tickets);
+      toast(result.reason === "tickets" ? `还差 ${missing} 张彩票` : "暂时无法解锁这只母球");
+      return;
+    }
+    audio.init();
+    audio.ticket();
+    toast(`已解锁并装备 ${skin.name}母球`);
+    window.setTimeout(() => previewSkin(id), 260);
+    return;
+  }
+  equipSkin(id);
+}
+
+skinGrid.addEventListener("click", (event) => {
+  const preview = event.target.closest("[data-skin-preview]");
+  if (preview) {
+    previewSkin(preview.dataset.skinPreview);
+    return;
+  }
+  const equip = event.target.closest("[data-skin-equip]");
+  if (equip) {
+    equipSkin(equip.dataset.skinEquip);
+    return;
+  }
+  const buy = event.target.closest("[data-skin-buy]");
+  if (buy) buySkin(buy.dataset.skinBuy);
+});
+
 /* ── Options ─────────────────────────────────────────────── */
 
 $("optionsBack").addEventListener("click", () => {
@@ -267,7 +385,7 @@ $("optionsHelpBtn").addEventListener("click", openHelp);
 
 $("optionsResetBtn").addEventListener("click", () => {
   const confirmed = window.confirm(
-    "重置本地存档？弹珠将回到 300 颗，游戏币、彩票、设置和记录都会清空。",
+    "重置本地存档？弹珠将回到 300 颗，游戏币、彩票、母球皮肤、设置和记录都会清空。",
   );
   if (!confirmed) return;
   account.reset();
@@ -291,6 +409,7 @@ showScreen("menu");
 // A small read-only debug surface for QA and future tooling.
 window.__MARBLE_APP__ = {
   account,
+  skins: SKIN_LIST,
   showScreen,
   get currentScreen() {
     return currentScreen;

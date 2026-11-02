@@ -4,6 +4,7 @@
    ============================================================ */
 
 import { account } from "./account.js";
+import { getSkin } from "./game/skins.js";
 
 const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
 const randomRange = (min, max) => min + Math.random() * (max - min);
@@ -17,6 +18,7 @@ class SoundEngine {
     this.lastWallAt = 0;
     this.lastMarbleAt = 0;
     this.pour = null;
+    this.previewToken = 0;
     this.volume = account.settings.volume;
     this.muted = account.settings.muted;
   }
@@ -126,7 +128,7 @@ class SoundEngine {
     const now = this.ctx.currentTime;
     if (now - this.lastPegAt < 0.024) return;
     this.lastPegAt = now;
-    this.tone(randomRange(620, 1160), 0.055, "triangle", clamp(0.012 + energy * 0.022, 0.012, 0.042), randomRange(850, 1450));
+    if (!this.#playSkin("peg", energy)) this.#defaultPeg(energy);
   }
 
   wall(energy = 1) {
@@ -134,7 +136,7 @@ class SoundEngine {
     const now = this.ctx.currentTime;
     if (now - this.lastWallAt < 0.045) return;
     this.lastWallAt = now;
-    this.noise(0.05, clamp(0.008 + energy * 0.009, 0.008, 0.022), 480);
+    if (!this.#playSkin("wall", energy)) this.#defaultWall(energy);
   }
 
   spring(strength = 0.7) {
@@ -143,6 +145,56 @@ class SoundEngine {
   }
 
   launch(power = 0.8) {
+    if (!this.#playSkin("launch", power)) this.#defaultLaunch(power);
+  }
+
+  /**
+   * Play a short launch → peg → wall audition for a skin, used by the shop.
+   * A newer preview cancels the pending layers of the previous one.
+   */
+  previewSkin(skinId) {
+    this.init();
+    const skin = getSkin(skinId);
+    this.previewToken += 1;
+    const token = this.previewToken;
+    const play = (event, ...args) => {
+      if (token !== this.previewToken) return;
+      if (this.#playSkinFor(skin, event, ...args)) return;
+      if (event === "launch") this.#defaultLaunch(...args);
+      else if (event === "peg") this.#defaultPeg(...args);
+      else if (event === "wall") this.#defaultWall(...args);
+    };
+    play("launch", 0.92);
+    window.setTimeout(() => play("peg", 1.1), 180);
+    window.setTimeout(() => play("wall", 0.9), 330);
+  }
+
+  #playSkin(event, ...args) {
+    return this.#playSkinFor(getSkin(account.equippedSkin), event, ...args);
+  }
+
+  #playSkinFor(skin, event, ...args) {
+    const recipe = skin?.sound?.[event];
+    if (typeof recipe !== "function") return false;
+    recipe(...args, this);
+    return true;
+  }
+
+  #defaultPeg(energy = 1) {
+    this.tone(
+      randomRange(620, 1160),
+      0.055,
+      "triangle",
+      clamp(0.012 + energy * 0.022, 0.012, 0.042),
+      randomRange(850, 1450),
+    );
+  }
+
+  #defaultWall(energy = 1) {
+    this.noise(0.05, clamp(0.008 + energy * 0.009, 0.008, 0.022), 480);
+  }
+
+  #defaultLaunch(power = 0.8) {
     this.noise(0.18, 0.05, 1000);
     this.tone(110 + power * 30, 0.28, "sine", 0.065, 360 + power * 190);
   }

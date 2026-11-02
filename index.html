@@ -96,7 +96,7 @@
           <div class="menu-btn-row">
             <button class="menu-btn menu-secondary" id="shopBtn" type="button">
               <span class="menu-btn-icon" aria-hidden="true">◈</span>
-              <span><strong>商店</strong><small>彩票 / 游戏币 / 弹珠</small></span>
+              <span><strong>商店</strong><small>彩票 / 皮肤 / 弹珠</small></span>
             </button>
             <button class="menu-btn menu-secondary" id="optionsBtn" type="button">
               <span class="menu-btn-icon" aria-hidden="true">⚙</span>
@@ -315,18 +315,24 @@
           <button id="shopReliefBtn" type="button">领取 30 颗补助</button>
         </div>
 
-        <div class="exchange-card teaser-card">
+        <div class="exchange-card skin-counter">
           <div class="exchange-head">
             <span class="exchange-icon skin-icon" aria-hidden="true">◉</span>
             <div>
               <h2>母球皮肤</h2>
-              <p>用彩票兑换限定母球外观。首批皮肤正在制作中。</p>
+              <p>用彩票解锁母球外观、拖尾、碰撞粒子与专属音效。只改变观感，不改变物理。</p>
             </div>
           </div>
-          <div class="teaser-foot">
-            <span class="teaser-tag">COMING SOON</span>
-            <span class="teaser-note">皮肤只改变外观，不改变物理属性</span>
+
+          <div class="skin-summary">
+            <span class="skin-summary-label">当前使用</span>
+            <b id="skinEquippedName" aria-live="polite">红宝石</b>
+            <span class="skin-summary-hint">点击「试听」可预听发射与碰撞音效</span>
           </div>
+
+          <div class="skin-grid" id="skinGrid"></div>
+
+          <p class="skin-note">皮肤会同步影响母球外观、拖尾、碰撞粒子、发射音效与碰撞音效。</p>
         </div>
 
         <p class="shop-note">兑换即时到账。没有游戏币和彩票、且弹珠不足 5 颗时，可领取 30 颗补助。</p>
@@ -417,6 +423,7 @@
         </div>
         <p>倍率越高，中奖槽位越少。母球最终落入 12 个槽位中的任意一个，奖槽由物理碰撞决定。</p>
       </div>
+      <p class="key-hint">商店的母球皮肤会改变外观、拖尾、碰撞粒子与发射 / 碰撞音效，<b>不影响物理属性与落点</b>。</p>
       <p class="key-hint">桌面端也可按住 <b>空格</b> 蓄力，松开空格发射。机台右上角的房子按钮可返回主界面。</p>
       <div class="dialog-actions">
         <button class="ghost-btn" id="resetBtn" type="button">重置本地存档</button>
