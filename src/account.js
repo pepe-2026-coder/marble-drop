@@ -3,7 +3,10 @@
    Single source of truth for persistent player resources.
    ============================================================ */
 
+import { DEFAULT_SKIN_ID, isSkinId } from "./game/skins.js";
+
 const STORAGE_KEY = "marble-drop-account-v2";
+const STATE_VERSION = 3;
 const STARTING_MARBLES = 300;
 const RELIEF_MARBLES = 30;
 const COINS_PER_TICKET = 5;
@@ -20,7 +23,7 @@ const clampFloat = (value, min, max, fallback) => {
 
 function createDefaultAccount() {
   return {
-    version: 2,
+    version: STATE_VERSION,
     marbles: STARTING_MARBLES,
     coins: 0,
     tickets: 0,
@@ -31,6 +34,10 @@ function createDefaultAccount() {
       haptics: true,
       payoutAnimation: true,
     },
+    skins: {
+      owned: [DEFAULT_SKIN_ID],
+      equipped: DEFAULT_SKIN_ID,
+    },
     stats: {
       rounds: 0,
       wins: 0,
@@ -38,11 +45,21 @@ function createDefaultAccount() {
   };
 }
 
+function normalizeSkins(raw) {
+  const owned = Array.isArray(raw?.owned) ? raw.owned.filter(isSkinId) : [];
+  if (!owned.includes(DEFAULT_SKIN_ID)) owned.unshift(DEFAULT_SKIN_ID);
+  const unique = [...new Set(owned)];
+  return {
+    owned: unique,
+    equipped: unique.includes(raw?.equipped) ? raw.equipped : DEFAULT_SKIN_ID,
+  };
+}
+
 function normalize(raw) {
   const base = createDefaultAccount();
   if (!raw || typeof raw !== "object") return base;
   return {
-    version: 2,
+    version: STATE_VERSION,
     marbles: clampInt(raw.marbles, 0, 9_999_999),
     coins: clampInt(raw.coins, 0, 9_999_999),
     tickets: clampInt(raw.tickets, 0, 9_999_999),
@@ -53,6 +70,7 @@ function normalize(raw) {
       haptics: raw.settings?.haptics !== false,
       payoutAnimation: raw.settings?.payoutAnimation !== false,
     },
+    skins: normalizeSkins(raw.skins),
     stats: {
       rounds: clampInt(raw.stats?.rounds, 0, 99_999_999),
       wins: clampInt(raw.stats?.wins, 0, 99_999_999),
@@ -117,6 +135,14 @@ class Account {
     return this.state.settings;
   }
 
+  get skins() {
+    return this.state.skins;
+  }
+
+  get equippedSkin() {
+    return this.state.skins.equipped;
+  }
+
   get stats() {
     return this.state.stats;
   }
@@ -177,6 +203,36 @@ class Account {
     if (next === this.state.bet) return;
     this.state.bet = next;
     this.#changed();
+  }
+
+  ownsSkin(id) {
+    return isSkinId(id) && this.state.skins.owned.includes(id);
+  }
+
+  equipSkin(id) {
+    if (!this.ownsSkin(id) || this.state.skins.equipped === id) return false;
+    this.state.skins.equipped = id;
+    this.#changed();
+    return true;
+  }
+
+  /**
+   * Buy a skin with tickets and equip it immediately. Returns a result object
+   * so the UI can distinguish an invalid skin, an unaffordable one and an
+   * already-owned skin without racing the account state.
+   */
+  purchaseSkin(id, price = 0) {
+    if (!isSkinId(id)) return { ok: false, reason: "invalid" };
+    if (this.ownsSkin(id)) {
+      return { ok: true, alreadyOwned: true, equipped: this.equipSkin(id) };
+    }
+    const cost = clampInt(price, 0, 9_999_999);
+    if (this.state.tickets < cost) return { ok: false, reason: "tickets" };
+    this.state.tickets -= cost;
+    this.state.skins.owned.push(id);
+    this.state.skins.equipped = id;
+    this.#changed();
+    return { ok: true, alreadyOwned: false, equipped: true, spent: cost };
   }
 
   exchangeTicketsToCoins(ticketCount = 1) {

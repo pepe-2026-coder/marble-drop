@@ -1839,18 +1839,6 @@ input:focus-visible {
   background: radial-gradient(circle at 35% 30%, #f4ddae, #d3a355 60%, #7e5d26);
 }
 
-.shop-swatch.is-gold {
-  background: radial-gradient(circle at 35% 30%, #fff4c9, #e7b84c 48%, #986d16 100%);
-}
-
-.shop-swatch.is-jade {
-  background: radial-gradient(circle at 35% 30%, #d8ffe9, #62c798 48%, #1f6d53 100%);
-}
-
-.shop-swatch.is-ruby {
-  background: radial-gradient(circle at 35% 30%, #ffd1bf, #e74b37 48%, #84130f 100%);
-}
-
 .shop-item-copy {
   min-width: 0;
 }
@@ -1903,12 +1891,6 @@ input:focus-visible {
 .shop-buy:disabled {
   opacity: 0.3;
   cursor: not-allowed;
-}
-
-.shop-buy.is-equipped {
-  border-color: rgba(221, 59, 44, 0.26);
-  background: rgba(221, 59, 44, 0.09);
-  color: #ffd8c9;
 }
 
 .ws-footnote {

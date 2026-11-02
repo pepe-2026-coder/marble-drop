@@ -35,6 +35,7 @@ import {
   easeInOutCubic,
 } from "./utils.js";
 import { PayoutAnimation } from "./payout.js";
+import { getSkin } from "./skins.js";
 
 /* ── DOM ─────────────────────────────────────────────────── */
 
@@ -125,36 +126,6 @@ const XP_STEP = 40;
 function xpNeededForLevel(level) {
   return 80 + (Math.max(1, level) - 1) * XP_STEP;
 }
-
-const BALL_SKINS = {
-  ruby: {
-    name: "红宝石",
-    inner: "#ff9372",
-    mid: "#f04a36",
-    deep: "#c6251b",
-    dark: "#80100d",
-    stroke: "rgba(103, 15, 11, 0.55)",
-    trail: "203, 42, 30",
-  },
-  gold: {
-    name: "鎏金",
-    inner: "#fff6c9",
-    mid: "#f6c95c",
-    deep: "#d3962c",
-    dark: "#76500f",
-    stroke: "rgba(97, 63, 12, 0.55)",
-    trail: "237, 183, 77",
-  },
-  jade: {
-    name: "青玉",
-    inner: "#d8ffec",
-    mid: "#7fd6a7",
-    deep: "#3fa87a",
-    dark: "#185641",
-    stroke: "rgba(18, 79, 57, 0.55)",
-    trail: "92, 190, 145",
-  },
-};
 
 const SKILL_BRANCHES = [
   {
@@ -258,36 +229,6 @@ const SHOP_ITEMS = [
     swatch: "is-pad",
     symbol: "◉",
   },
-  {
-    id: "skinRuby",
-    kind: "skin",
-    skin: "ruby",
-    name: "红宝石母球",
-    desc: "经典红宝石外观，默认拥有。",
-    price: 0,
-    swatch: "is-ruby",
-    symbol: "●",
-  },
-  {
-    id: "skinGold",
-    kind: "skin",
-    skin: "gold",
-    name: "鎏金母球",
-    desc: "金色珠光外观，不改变物理属性。",
-    price: 12,
-    swatch: "is-gold",
-    symbol: "●",
-  },
-  {
-    id: "skinJade",
-    kind: "skin",
-    skin: "jade",
-    name: "青玉母球",
-    desc: "温润青玉外观，不改变物理属性。",
-    price: 12,
-    swatch: "is-jade",
-    symbol: "●",
-  },
 ];
 
 function defaultProgress() {
@@ -297,35 +238,6 @@ function defaultProgress() {
     skillPoints: 1,
     skills: Object.fromEntries(Object.keys(SKILLS).map((id) => [id, 0])),
     inventory: { magnet: 0, pad: 0 },
-    ownedSkins: ["ruby"],
-    equippedSkin: "ruby",
-  };
-}
-
-function normalizeProgress(raw) {
-  const base = defaultProgress();
-  if (!raw || typeof raw !== "object") return base;
-  const skills = {};
-  for (const [id, def] of Object.entries(SKILLS)) {
-    const value = Math.round(Number(raw.skills?.[id]) || 0);
-    skills[id] = clamp(value, 0, def.max);
-  }
-  const ownedSkins = Array.isArray(raw.ownedSkins)
-    ? raw.ownedSkins.filter((skin) => typeof skin === "string" && BALL_SKINS[skin])
-    : [];
-  if (!ownedSkins.includes("ruby")) ownedSkins.unshift("ruby");
-  const equipped = ownedSkins.includes(raw.equippedSkin) ? raw.equippedSkin : "ruby";
-  return {
-    level: clamp(Math.round(Number(raw.level) || 1), 1, 999),
-    xp: clamp(Math.round(Number(raw.xp) || 0), 0, 9_999_999),
-    skillPoints: clamp(Math.round(Number(raw.skillPoints) || 0), 0, 999),
-    skills,
-    inventory: {
-      magnet: clamp(Math.round(Number(raw.inventory?.magnet) || 0), 0, 999),
-      pad: clamp(Math.round(Number(raw.inventory?.pad) || 0), 0, 999),
-    },
-    ownedSkins,
-    equippedSkin: equipped,
   };
 }
 
@@ -543,6 +455,9 @@ function collideSegment(b, seg) {
     if (!b.silent && Math.abs(vn) > 180) {
       audio.wall(Math.min(2, Math.abs(vn) / 800));
       if (Math.abs(vn) > 330) game.shake = Math.min(1.4, game.shake + 0.12);
+      if (Math.abs(vn) > 420) {
+        spawnWallSparks(cx, cy, Math.min(1.4, Math.abs(vn) / 900));
+      }
     }
   }
   return true;
@@ -705,7 +620,13 @@ function getSlotIndex(x) {
 
 /* ── Particles ───────────────────────────────────────────── */
 
+const equippedSkin = () => getSkin(account.equippedSkin);
+const pickOne = (list) => list[Math.floor(Math.random() * list.length)];
+
+let lastWallSparkAt = 0;
+
 function spawnPegSparks(x, y, energy = 1) {
+  const spec = equippedSkin().particles.peg;
   const count = 1 + Math.floor(energy * 2);
   for (let i = 0; i < count; i += 1) {
     particles.push({
@@ -716,14 +637,42 @@ function spawnPegSparks(x, y, energy = 1) {
       life: 0.24 + Math.random() * 0.2,
       maxLife: 0.44,
       size: randomRange(1.1, 2.4),
-      color: Math.random() > 0.4 ? "#e7b566" : "#fff1cb",
+      color: pickOne(spec.colors),
       gravity: 380,
-      shape: "spark",
+      shape: pickOne(spec.shapes),
+      rot: randomRange(0, TAU),
+      vr: randomRange(-7, 7),
+    });
+  }
+}
+
+/** Strong wall / divider hits throw a short spray in the skin palette. */
+function spawnWallSparks(x, y, energy = 1) {
+  const now = performance.now();
+  if (now - lastWallSparkAt < 70) return;
+  lastWallSparkAt = now;
+  const spec = equippedSkin().particles.wall;
+  const count = 2 + Math.floor(energy * 3);
+  for (let i = 0; i < count; i += 1) {
+    particles.push({
+      x,
+      y,
+      vx: randomRange(-95, 95),
+      vy: randomRange(-120, -20),
+      life: 0.16 + Math.random() * 0.22,
+      maxLife: 0.38,
+      size: randomRange(0.9, 2.1),
+      color: pickOne(spec.colors),
+      gravity: 430,
+      shape: pickOne(spec.shapes),
+      rot: randomRange(0, TAU),
+      vr: randomRange(-6, 6),
     });
   }
 }
 
 function spawnLaunchParticles() {
+  const spec = equippedSkin().particles.launch;
   for (let i = 0; i < 12; i += 1) {
     particles.push({
       x: CUP.x + randomRange(-10, 10),
@@ -733,14 +682,17 @@ function spawnLaunchParticles() {
       life: 0.35 + Math.random() * 0.32,
       maxLife: 0.67,
       size: randomRange(1, 2.8),
-      color: Math.random() > 0.35 ? "#e7b566" : "#f8ebd0",
+      color: pickOne(spec.colors),
       gravity: 260,
-      shape: "spark",
+      shape: pickOne(spec.shapes),
+      rot: randomRange(0, TAU),
+      vr: randomRange(-5, 5),
     });
   }
 }
 
 function spawnSlotBurst(x, y, win) {
+  const spec = win ? equippedSkin().particles.win : equippedSkin().particles.lose;
   const count = win ? 30 : 12;
   for (let i = 0; i < count; i += 1) {
     const angle = randomRange(Math.PI * 1.1, Math.PI * 1.9);
@@ -753,11 +705,9 @@ function spawnSlotBurst(x, y, win) {
       life: randomRange(0.45, 1.05),
       maxLife: 1.05,
       size: randomRange(1.4, 3.6),
-      color: win
-        ? ["#e7b566", "#f8dd9e", "#dd3b2c", "#fff4d8"][Math.floor(Math.random() * 4)]
-        : ["#9b8d78", "#b9a78d"][Math.floor(Math.random() * 2)],
+      color: pickOne(spec.colors),
       gravity: 560,
-      shape: win && Math.random() > 0.55 ? "confetti" : "spark",
+      shape: pickOne(spec.shapes),
       rot: randomRange(0, TAU),
       vr: randomRange(-8, 8),
     });
@@ -1013,27 +963,8 @@ function renderSkillsPanel() {
 
 function renderShopPanel() {
   wsShopPanel.innerHTML = SHOP_ITEMS.map((item) => {
-    const ownedSkin =
-      item.kind === "skin" && game.progress.ownedSkins.includes(item.skin);
-    const equipped =
-      item.kind === "skin" && game.progress.equippedSkin === item.skin;
-    const ownedCount =
-      item.kind === "consumable" ? game.progress.inventory[item.key] || 0 : 0;
+    const ownedCount = game.progress.inventory[item.key] || 0;
     const canAfford = game.tickets >= item.price;
-    let button;
-    if (equipped) {
-      button = `<button class="shop-buy is-equipped" type="button" disabled>使用中</button>`;
-    } else if (ownedSkin) {
-      button = `<button class="shop-buy" type="button" data-shop="${item.id}">装备</button>`;
-    } else {
-      button = `<button class="shop-buy" type="button" data-shop="${item.id}" ${canAfford ? "" : "disabled"}>${item.price} 彩票</button>`;
-    }
-    const ownedLabel =
-      item.kind === "consumable"
-        ? `持有 ${ownedCount}`
-        : ownedSkin
-          ? "已拥有"
-          : "未拥有";
     return `
       <article class="shop-item">
         <div class="shop-item-main">
@@ -1044,8 +975,8 @@ function renderShopPanel() {
           </span>
         </div>
         <div class="shop-item-foot">
-          <span class="shop-owned">${ownedLabel}</span>
-          ${button}
+          <span class="shop-owned">持有 ${ownedCount}</span>
+          <button class="shop-buy" type="button" data-shop="${item.id}" ${canAfford ? "" : "disabled"}>${item.price} 彩票</button>
         </div>
       </article>
     `;
@@ -1087,35 +1018,17 @@ function upgradeSkill(id) {
 function buyShopItem(id) {
   const item = SHOP_ITEMS.find((entry) => entry.id === id);
   if (!item || game.phase !== "idle") return;
-  if (item.kind === "consumable") {
-    if (game.tickets < item.price) {
-      toast("彩票不足");
-      return;
-    }
-    setTickets(game.tickets - item.price);
-    game.progress.inventory[item.key] += 1;
-    saveGame();
-    renderWorkshop(true);
-    updateToolTrayUI();
-    audio.ticket();
-    toast(`已购买 ${item.name}，下一局布阵时可用`);
+  if (game.tickets < item.price) {
+    toast("彩票不足");
     return;
   }
-  if (item.kind === "skin") {
-    if (!game.progress.ownedSkins.includes(item.skin)) {
-      if (game.tickets < item.price) {
-        toast("彩票不足");
-        return;
-      }
-      setTickets(game.tickets - item.price);
-      game.progress.ownedSkins.push(item.skin);
-    }
-    game.progress.equippedSkin = item.skin;
-    saveGame();
-    renderWorkshop(true);
-    audio.ticket();
-    toast(`${item.name} 已装备`);
-  }
+  setTickets(game.tickets - item.price);
+  game.progress.inventory[item.key] += 1;
+  saveGame();
+  renderWorkshop(true);
+  updateToolTrayUI();
+  audio.ticket();
+  toast(`已购买 ${item.name}，下一局布阵时可用`);
 }
 
 function openWorkshop(tab = "skills") {
@@ -2917,27 +2830,159 @@ function getBallDrawPosition(now) {
   return { x: ball.x, y: ball.y, returning: false };
 }
 
+function traceStar(context, x, y, outer, inner, points = 4, rotation = 0) {
+  context.beginPath();
+  for (let i = 0; i < points * 2; i += 1) {
+    const radius = i % 2 === 0 ? outer : inner;
+    const angle = rotation + (Math.PI * i) / points - Math.PI / 2;
+    const px = x + Math.cos(angle) * radius;
+    const py = y + Math.sin(angle) * radius;
+    if (i === 0) context.moveTo(px, py);
+    else context.lineTo(px, py);
+  }
+  context.closePath();
+}
+
+/** Speed trail. Every skin picks its own style, colour and lifetime. */
+function drawBallTrail(now, skin, speed) {
+  const spec = skin.trail;
+  if (speed <= 380 || ball.trail.length < 2) return;
+
+  ctx.save();
+  if (spec.style === "ribbon") {
+    const points = ball.trail.filter((point) => now - point.time <= spec.life);
+    if (points.length > 1) {
+      ctx.strokeStyle = `rgba(${spec.color}, ${spec.alpha})`;
+      ctx.lineWidth = spec.width;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.beginPath();
+      ctx.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i += 1) {
+        const previous = points[i - 1];
+        const current = points[i];
+        ctx.quadraticCurveTo(
+          previous.x,
+          previous.y,
+          (previous.x + current.x) / 2,
+          (previous.y + current.y) / 2,
+        );
+      }
+      ctx.stroke();
+    }
+  } else if (spec.style === "streak") {
+    ctx.lineCap = "round";
+    for (let i = 1; i < ball.trail.length; i += 1) {
+      const previous = ball.trail[i - 1];
+      const current = ball.trail[i];
+      const age = now - current.time;
+      if (age > spec.life) continue;
+      const t = 1 - age / spec.life;
+      ctx.strokeStyle = `rgba(${spec.color}, ${t * spec.alpha})`;
+      ctx.lineWidth = spec.width * (0.35 + t * 0.65);
+      ctx.beginPath();
+      ctx.moveTo(previous.x, previous.y);
+      ctx.lineTo(current.x, current.y);
+      ctx.stroke();
+    }
+  } else {
+    ball.trail.forEach((point, index) => {
+      const age = now - point.time;
+      if (age > spec.life) return;
+      const t = 1 - age / spec.life;
+      if (spec.style === "sparkle") {
+        const size = 1.1 + t * 2.4;
+        ctx.globalAlpha = t * 0.9;
+        ctx.fillStyle = index % 3 === 0 ? spec.accent : `rgb(${spec.color})`;
+        traceStar(ctx, point.x, point.y, size, size * 0.32, 4, index * 0.9);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      } else if (spec.style === "bubble") {
+        ctx.strokeStyle = `rgba(${spec.color}, ${t * spec.alpha * 1.6})`;
+        ctx.lineWidth = spec.width;
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, BALL_R * (spec.size + t * 0.3), 0, TAU);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = `rgba(${spec.color}, ${t * spec.alpha})`;
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, BALL_R * (spec.size + t * 0.3), 0, TAU);
+        ctx.fill();
+      }
+    });
+  }
+  ctx.restore();
+}
+
+/** Per-skin surface pattern, clipped inside the marble. */
+function drawBallPattern(skin, x, y) {
+  const { pattern, patternColor } = skin.ball;
+  if (pattern === "none") return;
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, BALL_R, 0, TAU);
+  ctx.clip();
+  ctx.translate(x, y);
+  ctx.rotate(ball.spin * 0.8);
+  ctx.fillStyle = patternColor;
+  ctx.strokeStyle = patternColor;
+
+  if (pattern === "stripe") {
+    ctx.fillRect(-BALL_R, -2.6, BALL_R * 2, 1.5);
+    ctx.fillRect(-BALL_R, 1.2, BALL_R * 2, 1);
+  } else if (pattern === "star") {
+    traceStar(ctx, 0, 0, 5.2, 2, 4, 0);
+    ctx.fill();
+  } else if (pattern === "ring") {
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(0, 0, 5.4, 0, TAU);
+    ctx.stroke();
+    ctx.lineWidth = 0.7;
+    ctx.beginPath();
+    ctx.arc(0, 0, 3.3, 0, TAU);
+    ctx.stroke();
+  } else if (pattern === "bolt") {
+    ctx.lineWidth = 1.4;
+    ctx.lineJoin = "miter";
+    ctx.beginPath();
+    ctx.moveTo(-5.4, -5.2);
+    ctx.lineTo(0.8, -1.4);
+    ctx.lineTo(-1.2, 0.8);
+    ctx.lineTo(5.2, 5.2);
+    ctx.stroke();
+  } else if (pattern === "speck") {
+    [
+      [-2.8, -2.4, 1.15],
+      [2.6, -1.8, 0.9],
+      [1.9, 2.8, 1.05],
+      [-2.2, 2.6, 0.75],
+    ].forEach(([x, y, r]) => {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, TAU);
+      ctx.fill();
+    });
+  } else if (pattern === "orbit") {
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.arc(0, 0, 4.6, 0, TAU);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(4.6, 0, 1.5, 0, TAU);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
 function drawBall(now) {
   const pos = getBallDrawPosition(now);
   const speed = Math.hypot(ball.vx, ball.vy);
   const isFlying = game.phase === "flying" && game.landingResolved === false;
-  const skin = BALL_SKINS[game.progress.equippedSkin] || BALL_SKINS.ruby;
+  const skin = equippedSkin();
 
-  // Speed trail
-  if (isFlying && speed > 420) {
-    ctx.save();
-    for (const point of ball.trail) {
-      const age = now - point.time;
-      if (age > 260) continue;
-      const alpha = (1 - age / 260) * 0.15;
-      const radius = BALL_R * (0.46 + (1 - age / 260) * 0.3);
-      ctx.fillStyle = `rgba(${skin.trail}, ${alpha})`;
-      ctx.beginPath();
-      ctx.arc(point.x, point.y, radius, 0, TAU);
-      ctx.fill();
-    }
-    ctx.restore();
-  }
+  if (isFlying) drawBallTrail(now, skin, speed);
 
   ctx.save();
 
@@ -2946,6 +2991,20 @@ function drawBall(now) {
   ctx.beginPath();
   ctx.ellipse(pos.x + 2.5, pos.y + 10, 8, 3.2, 0, 0, TAU);
   ctx.fill();
+
+  // Skin aura
+  if (skin.ball.glow) {
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const aura = ctx.createRadialGradient(pos.x, pos.y, BALL_R * 0.5, pos.x, pos.y, BALL_R * 2.7);
+    aura.addColorStop(0, skin.ball.glow);
+    aura.addColorStop(1, "rgba(0, 0, 0, 0)");
+    ctx.fillStyle = aura;
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, BALL_R * 2.7, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+  }
 
   // Ball body
   const grad = ctx.createRadialGradient(
@@ -2956,17 +3015,22 @@ function drawBall(now) {
     pos.y + 2,
     BALL_R * 1.25,
   );
-  grad.addColorStop(0, skin.inner);
-  grad.addColorStop(0.28, skin.mid);
-  grad.addColorStop(0.72, skin.deep);
-  grad.addColorStop(1, skin.dark);
+  grad.addColorStop(0, skin.ball.inner);
+  grad.addColorStop(0.28, skin.ball.mid);
+  grad.addColorStop(0.72, skin.ball.deep);
+  grad.addColorStop(1, skin.ball.dark);
   ctx.fillStyle = grad;
   ctx.beginPath();
   ctx.arc(pos.x, pos.y, BALL_R, 0, TAU);
   ctx.fill();
 
-  ctx.strokeStyle = skin.stroke;
+  // Pattern follows the draw position without touching ball physics state.
+  drawBallPattern(skin, pos.x, pos.y);
+
+  ctx.strokeStyle = skin.ball.stroke;
   ctx.lineWidth = 0.7;
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, BALL_R, 0, TAU);
   ctx.stroke();
 
   // Rotating glint
@@ -2994,14 +3058,33 @@ function drawParticles() {
   for (const p of particles) {
     const alpha = clamp(p.life / p.maxLife, 0, 1);
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = p.color;
     if (p.shape === "confetti") {
+      ctx.fillStyle = p.color;
       ctx.save();
       ctx.translate(p.x, p.y);
       ctx.rotate(p.rot || 0);
       ctx.fillRect(-p.size / 2, -p.size / 3, p.size, p.size * 0.68);
       ctx.restore();
+    } else if (p.shape === "star") {
+      ctx.fillStyle = p.color;
+      traceStar(
+        ctx,
+        p.x,
+        p.y,
+        p.size * (0.7 + alpha * 1.25),
+        p.size * (0.26 + alpha * 0.48),
+        4,
+        p.rot || 0,
+      );
+      ctx.fill();
+    } else if (p.shape === "bubble") {
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * (0.7 + alpha * 0.95), 0, TAU);
+      ctx.stroke();
     } else {
+      ctx.fillStyle = p.color;
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.size * (0.45 + alpha * 0.55), 0, TAU);
       ctx.fill();
@@ -3135,7 +3218,7 @@ function update(now, dt) {
     if (Math.hypot(ball.vx, ball.vy) > 300 && ball.trailClock > 0.016) {
       ball.trailClock = 0;
       ball.trail.push({ x: ball.x, y: ball.y, time: now });
-      if (ball.trail.length > 15) ball.trail.shift();
+      if (ball.trail.length > 22) ball.trail.shift();
     }
 
     if (!game.landingResolved) {
@@ -3529,7 +3612,7 @@ helpDialog.addEventListener("click", (event) => {
 });
 
 resetBtn.addEventListener("click", () => {
-  const confirmed = window.confirm("重置本地存档？弹珠将回到 300 颗，游戏币、彩票和设置都会清空。");
+  const confirmed = window.confirm("重置本地存档？弹珠将回到 300 颗，游戏币、彩票、母球皮肤和设置都会清空。");
   if (!confirmed) return;
   account.reset();
   closeHelp();
@@ -3572,7 +3655,6 @@ function snapshot() {
       skillPoints: game.progress.skillPoints,
       skills: { ...game.progress.skills },
       inventory: { ...game.progress.inventory },
-      equippedSkin: game.progress.equippedSkin,
     },
     toolAvailable: { ...game.toolAvailable },
     toolPlaced: { ...game.toolPlaced },
