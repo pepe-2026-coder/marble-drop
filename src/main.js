@@ -7,6 +7,8 @@ import "./game/engine.js";
 import { account, economy } from "./account.js";
 import { audio, vibrate } from "./audio.js";
 import { SKIN_LIST, getSkin, skinCssVars } from "./game/skins.js";
+import { TABLE_LIST, getTable, tableCssVars } from "./game/tables.js";
+import { drawTablePreview } from "./game/tablePreview.js";
 import { toast } from "./ui/toast.js";
 
 const $ = (id) => document.getElementById(id);
@@ -34,6 +36,8 @@ const coinBuySmall = $("coinBuySmall");
 const coinBuyLarge = $("coinBuyLarge");
 const skinGrid = $("skinGrid");
 const skinEquippedName = $("skinEquippedName");
+const tableGrid = $("tableGrid");
+const tableEquippedName = $("tableEquippedName");
 
 const volumeRange = $("volumeRange");
 const volumeValue = $("volumeValue");
@@ -61,7 +65,11 @@ function showScreen(name) {
   });
   document.body.dataset.screen = name;
 
-  if (name === "shop") renderSkinShop(account.snapshot());
+  if (name === "shop") {
+    const state = account.snapshot();
+    renderTableShop(state);
+    renderSkinShop(state);
+  }
 
   if (name === "game") {
     requestAnimationFrame(() => {
@@ -107,7 +115,10 @@ function syncAccount(state) {
   hapticsToggle.setAttribute("aria-pressed", String(state.settings.haptics));
   payoutToggle.setAttribute("aria-pressed", String(state.settings.payoutAnimation));
 
-  if (currentScreen === "shop") renderSkinShop(state);
+  if (currentScreen === "shop") {
+    renderTableShop(state);
+    renderSkinShop(state);
+  }
 }
 
 account.subscribe(syncAccount);
@@ -218,6 +229,105 @@ $("shopReliefBtn").addEventListener("click", () => {
     audio.ticket();
     toast(`已领取 ${amount} 颗补助弹珠`);
   }
+});
+
+/* ── Pinball tables ──────────────────────────────────────── */
+
+function renderTableShop(state) {
+  const equipped = getTable(state.tables.equipped);
+  tableEquippedName.textContent = `${equipped.name} · ${equipped.en}`;
+
+  tableGrid.innerHTML = TABLE_LIST.map((table) => {
+    const owned = state.tables.owned.includes(table.id);
+    const isEquipped = state.tables.equipped === table.id;
+    const canAfford = state.tickets >= table.price;
+    const priceLabel = table.price > 0 ? `${table.price} 彩票` : "免费机台";
+
+    let action;
+    if (isEquipped) {
+      action = `<button class="skin-btn is-equipped" type="button" disabled>使用中</button>`;
+    } else if (owned) {
+      action = `<button class="skin-btn" type="button" data-table-equip="${table.id}">装备</button>`;
+    } else {
+      action = `<button class="skin-btn is-buy" type="button" data-table-buy="${table.id}" ${canAfford ? "" : "disabled"} title="${canAfford ? "用彩票购买并装备" : "彩票不足"}">${priceLabel}</button>`;
+    }
+
+    const cardClass = [
+      "table-card",
+      isEquipped ? "is-equipped" : "",
+      owned ? "is-owned" : "is-locked",
+      table.art === "cyberpunk" ? "is-cyber" : "is-classic",
+    ]
+      .filter(Boolean)
+      .join(" ");
+
+    return `
+      <article class="${cardClass}" data-table-card="${table.id}" style="${tableCssVars(table)}">
+        <canvas class="table-thumb" data-table-preview="${table.id}" aria-hidden="true"></canvas>
+        <div class="table-card-body">
+          <div class="skin-card-head">
+            <span class="skin-name">${table.name}</span>
+            <span class="skin-en">${table.en}</span>
+          </div>
+          <p class="skin-tagline">${table.tagline}</p>
+          <p class="table-desc">${table.description}</p>
+          <div class="skin-chips">
+            ${table.features.map((feature) => `<span class="skin-chip">${feature}</span>`).join("")}
+            ${isEquipped ? '<span class="skin-chip is-current">使用中</span>' : ""}
+          </div>
+        </div>
+        <div class="table-card-foot">
+          <span class="table-price">${owned ? "已拥有" : priceLabel}</span>
+          ${action}
+        </div>
+      </article>
+    `;
+  }).join("");
+
+  requestAnimationFrame(() => {
+    tableGrid.querySelectorAll("canvas[data-table-preview]").forEach((preview) => {
+      drawTablePreview(preview, getTable(preview.dataset.tablePreview));
+    });
+  });
+}
+
+function equipTable(id) {
+  const table = getTable(id);
+  if (!account.ownsTable(id)) {
+    toast("这台机台还没有购买");
+    return;
+  }
+  const changed = account.equipTable(id);
+  audio.init();
+  audio.click();
+  toast(changed ? `已装备 ${table.name} 机台` : `${table.name} 机台正在使用`);
+}
+
+function buyTable(id) {
+  const table = getTable(id);
+  if (!account.ownsTable(id)) {
+    const result = account.purchaseTable(id, table.price);
+    if (!result.ok) {
+      const missing = Math.max(0, table.price - account.tickets);
+      toast(result.reason === "tickets" ? `还差 ${missing} 张彩票` : "暂时无法购买这台机台");
+      return;
+    }
+    audio.init();
+    audio.ticket();
+    toast(`已购买并装备 ${table.name} 机台`);
+    return;
+  }
+  equipTable(id);
+}
+
+tableGrid.addEventListener("click", (event) => {
+  const equip = event.target.closest("[data-table-equip]");
+  if (equip) {
+    equipTable(equip.dataset.tableEquip);
+    return;
+  }
+  const buy = event.target.closest("[data-table-buy]");
+  if (buy) buyTable(buy.dataset.tableBuy);
 });
 
 /* ── Mother-ball skins ───────────────────────────────────── */
@@ -385,7 +495,7 @@ $("optionsHelpBtn").addEventListener("click", openHelp);
 
 $("optionsResetBtn").addEventListener("click", () => {
   const confirmed = window.confirm(
-    "重置本地存档？弹珠将回到 300 颗，游戏币、彩票、母球皮肤、设置和记录都会清空。",
+    "重置本地存档？弹珠将回到 300 颗，游戏币、彩票、母球皮肤、机台、设置和记录都会清空。",
   );
   if (!confirmed) return;
   account.reset();
@@ -410,6 +520,7 @@ showScreen("menu");
 window.__MARBLE_APP__ = {
   account,
   skins: SKIN_LIST,
+  tables: TABLE_LIST,
   showScreen,
   get currentScreen() {
     return currentScreen;

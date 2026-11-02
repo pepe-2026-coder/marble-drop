@@ -4,9 +4,10 @@
    ============================================================ */
 
 import { DEFAULT_SKIN_ID, isSkinId } from "./game/skins.js";
+import { DEFAULT_TABLE_ID, isTableId } from "./game/tables.js";
 
 const STORAGE_KEY = "marble-drop-account-v2";
-const STATE_VERSION = 3;
+const STATE_VERSION = 4;
 const STARTING_MARBLES = 300;
 const RELIEF_MARBLES = 30;
 const COINS_PER_TICKET = 5;
@@ -38,6 +39,10 @@ function createDefaultAccount() {
       owned: [DEFAULT_SKIN_ID],
       equipped: DEFAULT_SKIN_ID,
     },
+    tables: {
+      owned: [DEFAULT_TABLE_ID],
+      equipped: DEFAULT_TABLE_ID,
+    },
     stats: {
       rounds: 0,
       wins: 0,
@@ -52,6 +57,16 @@ function normalizeSkins(raw) {
   return {
     owned: unique,
     equipped: unique.includes(raw?.equipped) ? raw.equipped : DEFAULT_SKIN_ID,
+  };
+}
+
+function normalizeTables(raw) {
+  const owned = Array.isArray(raw?.owned) ? raw.owned.filter(isTableId) : [];
+  if (!owned.includes(DEFAULT_TABLE_ID)) owned.unshift(DEFAULT_TABLE_ID);
+  const unique = [...new Set(owned)];
+  return {
+    owned: unique,
+    equipped: unique.includes(raw?.equipped) ? raw.equipped : DEFAULT_TABLE_ID,
   };
 }
 
@@ -71,6 +86,7 @@ function normalize(raw) {
       payoutAnimation: raw.settings?.payoutAnimation !== false,
     },
     skins: normalizeSkins(raw.skins),
+    tables: normalizeTables(raw.tables),
     stats: {
       rounds: clampInt(raw.stats?.rounds, 0, 99_999_999),
       wins: clampInt(raw.stats?.wins, 0, 99_999_999),
@@ -141,6 +157,14 @@ class Account {
 
   get equippedSkin() {
     return this.state.skins.equipped;
+  }
+
+  get tables() {
+    return this.state.tables;
+  }
+
+  get equippedTable() {
+    return this.state.tables.equipped;
   }
 
   get stats() {
@@ -231,6 +255,35 @@ class Account {
     this.state.tickets -= cost;
     this.state.skins.owned.push(id);
     this.state.skins.equipped = id;
+    this.#changed();
+    return { ok: true, alreadyOwned: false, equipped: true, spent: cost };
+  }
+
+  ownsTable(id) {
+    return isTableId(id) && this.state.tables.owned.includes(id);
+  }
+
+  equipTable(id) {
+    if (!this.ownsTable(id) || this.state.tables.equipped === id) return false;
+    this.state.tables.equipped = id;
+    this.#changed();
+    return true;
+  }
+
+  /**
+   * Buy a table with tickets and equip it immediately. Tickets are the only
+   * cosmetic / machine unlock currency; coins are reserved for buying marbles.
+   */
+  purchaseTable(id, price = 0) {
+    if (!isTableId(id)) return { ok: false, reason: "invalid" };
+    if (this.ownsTable(id)) {
+      return { ok: true, alreadyOwned: true, equipped: this.equipTable(id) };
+    }
+    const cost = clampInt(price, 0, 9_999_999);
+    if (this.state.tickets < cost) return { ok: false, reason: "tickets" };
+    this.state.tickets -= cost;
+    this.state.tables.owned.push(id);
+    this.state.tables.equipped = id;
     this.#changed();
     return { ok: true, alreadyOwned: false, equipped: true, spent: cost };
   }

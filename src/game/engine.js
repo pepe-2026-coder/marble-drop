@@ -12,7 +12,6 @@ import {
   TAU,
   INNER,
   MAIN_RIGHT,
-  PEGS,
   SLOT,
   LANE,
   STAGE,
@@ -36,6 +35,25 @@ import {
 } from "./utils.js";
 import { PayoutAnimation } from "./payout.js";
 import { getSkin } from "./skins.js";
+import { DEFAULT_TABLE_ID, TABLE_LIST, getTable, hexToRgb } from "./tables.js";
+import {
+  buildObstacles,
+  resetObstacles,
+  randomizeObstacles,
+  updateObstacles,
+  collideObstacles,
+  drawObstacles,
+} from "./obstacles.js";
+import {
+  drawCyberCabinet,
+  drawCyberMarquee,
+  drawCyberPegs,
+  drawCyberSlots,
+  drawCyberLaunchLane,
+  drawCyberReturnRamp,
+  drawCyberSpring,
+  drawCyberFocusGlow,
+} from "./cyberpunk.js";
 
 /* ── DOM ─────────────────────────────────────────────────── */
 
@@ -330,6 +348,11 @@ const payoutFx = new PayoutAnimation({
   getScale: () => canvasScale,
 });
 
+/* ── Active table ────────────────────────────────────────── */
+
+let activeTable = getTable(account.equippedTable || DEFAULT_TABLE_ID);
+let pendingTableId = null;
+
 /* ── World geometry ──────────────────────────────────────── */
 
 const segments = [];
@@ -338,6 +361,7 @@ const slotCaps = [];
 const particles = [];
 const activeMagnets = [];
 const activePads = [];
+let obstacles = [];
 
 function addSegment(x1, y1, x2, y2, restitution = 0.46, kind = "wall") {
   const dx = x2 - x1;
@@ -360,20 +384,36 @@ function buildWorld() {
   pegs.length = 0;
   slotCaps.length = 0;
 
-  // Dome: sampled ellipse arc from right shoulder over the top to left shoulder.
-  const domeSegments = 110;
-  let prev = null;
-  for (let i = 0; i <= domeSegments; i += 1) {
-    const t = Math.PI - (i / domeSegments) * Math.PI;
-    const x = INNER.cx + INNER.rx * Math.cos(t);
-    const y = INNER.cy - INNER.ry * Math.sin(t);
-    if (prev) addSegment(prev.x, prev.y, x, y, 0.62, "dome");
-    prev = { x, y };
+  const arch = activeTable.layout.arch || { kind: "ellipse" };
+  let leftShoulderY = INNER.cy;
+  let rightShoulderY = INNER.cy;
+
+  if (arch.kind === "polyline" && Array.isArray(arch.points) && arch.points.length > 1) {
+    // Angular tech ceilings collide as a chain of straight plates. Extra points
+    // keep the corners from feeling like a single hard ramp.
+    const points = arch.points;
+    for (let i = 1; i < points.length; i += 1) {
+      addSegment(points[i - 1].x, points[i - 1].y, points[i].x, points[i].y, 0.62, "dome");
+    }
+    leftShoulderY = points[0].y;
+    rightShoulderY = points[points.length - 1].y;
+  } else {
+    // Classic dome: sampled ellipse from the right shoulder over the top to
+    // the left shoulder.
+    const domeSegments = 110;
+    let prev = null;
+    for (let i = 0; i <= domeSegments; i += 1) {
+      const t = Math.PI - (i / domeSegments) * Math.PI;
+      const x = INNER.cx + INNER.rx * Math.cos(t);
+      const y = INNER.cy - INNER.ry * Math.sin(t);
+      if (prev) addSegment(prev.x, prev.y, x, y, 0.62, "dome");
+      prev = { x, y };
+    }
   }
 
   // Outer sides and launch lane.
-  addSegment(INNER.left, INNER.cy, INNER.left, SLOT.floor, 0.4, "wall");
-  addSegment(INNER.right, INNER.cy, INNER.right, 1168, 0.42, "wall");
+  addSegment(INNER.left, leftShoulderY, INNER.left, SLOT.floor, 0.4, "wall");
+  addSegment(INNER.right, rightShoulderY, INNER.right, 1168, 0.42, "wall");
   addSegment(LANE.left, LANE.dividerTop, LANE.left, LANE.dividerBottom, 0.46, "divider");
   addSegment(SLOT.x0, SLOT.floor, SLOT.x1, SLOT.floor, 0.32, "floor");
 
@@ -384,29 +424,92 @@ function buildWorld() {
     slotCaps.push({ x, y: SLOT.top, r: 2.4 });
   }
 
-  // Symmetric triangular lattice. Every row is centred on the playfield, and
-  // the even/odd rows alternate 10/9 pins so the left and right edges have the
-  // same clearance. This replaces the old asymmetric funnel that left one side
-  // wide open and nearly sealed the other.
-  for (let row = 0; row < PEGS.rows; row += 1) {
-    const isOdd = row % 2 === 1;
-    const count = isOdd ? PEGS.oddCount : PEGS.evenCount;
-    const startX = PEGS.firstX + (isOdd ? PEGS.halfOffsetX : 0);
-    const y = PEGS.startY + row * PEGS.gapY;
-    for (let col = 0; col < count; col += 1) {
-      pegs.push({
-        x: startX + col * PEGS.gapX,
-        y,
-        r: PEGS.r,
-        glow: 0,
-        lastHit: 0,
-        id: `${row}-${col}`,
-      });
-    }
-  }
+  // Each table supplies its own peg recipes. The classic table keeps the
+  // symmetric 10/9 lattice; themed tables can use splitter pins or sparse rows.
+  (activeTable.layout.pegs || []).forEach((peg, index) => {
+    pegs.push({
+      ...peg,
+      glow: 0,
+      lastHit: 0,
+      id: peg.id || `peg-${index}`,
+    });
+  });
+
+  obstacles = buildObstacles(activeTable.layout.obstacles || []);
+
+  document.body.dataset.table = activeTable.id;
+  document.body.style.setProperty("--table-accent", activeTable.palette.primary);
+  document.body.style.setProperty("--table-accent-rgb", hexToRgb(activeTable.palette.primary));
+  document.body.style.setProperty("--table-second", activeTable.palette.secondary);
+  document.body.style.setProperty("--table-second-rgb", hexToRgb(activeTable.palette.secondary));
+  document.body.style.setProperty("--table-third", activeTable.palette.tertiary);
+  document.body.style.setProperty("--table-third-rgb", hexToRgb(activeTable.palette.tertiary));
 }
 
 buildWorld();
+
+/* ── Table switching ─────────────────────────────────────── */
+
+/**
+ * Rebuild the live world when the equipped table changes. A table switch is
+ * only safe between rounds; if it arrives mid-round we defer it until the
+ * return ramp has finished.
+ */
+function applyTable(id, announce = false) {
+  const next = getTable(id);
+  if (next.id === activeTable.id) return false;
+  if (game.phase !== "idle") {
+    pendingTableId = next.id;
+    return false;
+  }
+  activeTable = next;
+  pendingTableId = null;
+  buildWorld();
+  resetObstacles(obstacles);
+
+  particles.length = 0;
+  activeMagnets.length = 0;
+  activePads.length = 0;
+  payoutFx.stop();
+  clearScheduled();
+  ball.x = STAGE.x;
+  ball.y = STAGE.y;
+  ball.prevX = STAGE.x;
+  ball.prevY = STAGE.y;
+  ball.vx = 0;
+  ball.vy = 0;
+  ball.trail.length = 0;
+  ball.spin = 0;
+  ball.stallTime = 0;
+
+  game.result = null;
+  game.litSlots.clear();
+  game.litReveal.clear();
+  game.flashSlot = null;
+  game.lastSlot = null;
+  game.landingResolved = false;
+  game.gate = 0;
+  game.gateTarget = 0;
+  game.drop = null;
+  game.returnAnim = null;
+  game.returnPos = null;
+  game.placingTool = null;
+  game.toolAvailable = { magnet: 0, pad: 0 };
+  game.toolPlaced = { magnet: 0, pad: 0 };
+
+  rebuildStaticLayer();
+  setPhase("idle");
+  setPowerUI(0, "ready");
+  setRoundBadge("ready", "等待投珠");
+  setPlayStatus("等待投珠", "选择投入后开始", false);
+  hideBanner();
+  hideHint();
+  hideResultCard();
+  updateBetUI();
+  requestAnimationFrame(fitMachine);
+  if (announce) toast(`已换装 ${activeTable.name} 机台`);
+  return true;
+}
 
 /* ── Physics ─────────────────────────────────────────────── */
 
@@ -486,7 +589,8 @@ function collidePeg(b, peg) {
     // Imperfect pins: a tiny tangential scatter makes each run feel alive.
     const tx = -ny;
     const ty = nx;
-    const scatter = randomRange(-45, 45);
+    const scatterScale = peg.kind === "splitter" ? 1.75 : 1;
+    const scatter = randomRange(-45, 45) * scatterScale;
     b.vx += tx * scatter;
     b.vy += ty * scatter;
 
@@ -587,6 +691,7 @@ function stepBallPhysics(b, dt) {
     b.vy *= k;
   }
 
+  const obstacleEvents = [];
   for (let iter = 0; iter < 2; iter += 1) {
     let touched = false;
     for (let i = 0; i < slotCaps.length; i += 1) {
@@ -602,9 +707,17 @@ function stepBallPhysics(b, dt) {
     for (let i = 0; i < activePads.length; i += 1) {
       if (collidePad(b, activePads[i])) touched = true;
     }
+    if (obstacles.length) {
+      const events = collideObstacles(b, obstacles);
+      if (events.length) {
+        touched = true;
+        obstacleEvents.push(...events);
+      }
+    }
     if (!touched) break;
   }
 
+  if (!b.silent && obstacleEvents.length) handleObstacleEvents(obstacleEvents);
   b.spin += (b.vx / b.r) * dt;
 }
 
@@ -846,6 +959,11 @@ function syncAccountUI(state) {
   marbleCountEl.textContent = String(game.marbles);
   ticketCountEl.textContent = String(game.tickets);
   dockBalanceEl.textContent = String(game.marbles);
+
+  if (state.tables && state.tables.equipped !== activeTable.id) {
+    if (game.phase === "idle") applyTable(state.tables.equipped);
+    else pendingTableId = state.tables.equipped;
+  }
   updateBetUI();
 }
 
@@ -1192,6 +1310,99 @@ function spawnToolBurst(x, y, color) {
   }
 }
 
+/** Neon spark burst shared by bumpers, rotors and portal gates. */
+function spawnNeonBurst(x, y, color, count = 10, energy = 1) {
+  const palette = [color, "#ffffff", activeTable.palette.secondary, activeTable.palette.tertiary];
+  for (let i = 0; i < count; i += 1) {
+    const angle = randomRange(0, TAU);
+    const speed = randomRange(60, 250) * energy;
+    particles.push({
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - randomRange(20, 90),
+      life: randomRange(0.22, 0.6),
+      maxLife: 0.6,
+      size: randomRange(1.2, 3),
+      color: pickOne(palette),
+      gravity: 340,
+      shape: Math.random() < 0.45 ? "star" : "spark",
+      rot: randomRange(0, TAU),
+      vr: randomRange(-8, 8),
+    });
+  }
+}
+
+/** Portal entry/exit: a ring of sparks at both gates. */
+function spawnPortalBurst(x, y, color) {
+  for (let i = 0; i < 18; i += 1) {
+    const angle = (i / 18) * TAU;
+    const speed = randomRange(80, 190);
+    particles.push({
+      x: x + Math.cos(angle) * 12,
+      y: y + Math.sin(angle) * 12,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      life: randomRange(0.3, 0.7),
+      maxLife: 0.7,
+      size: randomRange(1.2, 2.8),
+      color: i % 3 === 0 ? "#ffffff" : color,
+      gravity: 60,
+      shape: "star",
+      rot: randomRange(0, TAU),
+      vr: randomRange(-10, 10),
+    });
+  }
+}
+
+/** Translate obstacle collision events into sound, sparks and shake. */
+function handleObstacleEvents(events) {
+  for (const event of events) {
+    if (event.kind === "car") {
+      const energy = Math.min(2, event.impact / 520);
+      audio.wall(energy);
+      if (Math.random() < 0.8) audio.peg(energy);
+      spawnNeonBurst(event.x, event.y, event.accent || activeTable.palette.primary, 7, energy);
+      game.shake = Math.min(1.4, game.shake + 0.08 + energy * 0.1);
+      continue;
+    }
+    if (event.kind === "rotor") {
+      const energy = Math.min(2, event.impact / 560);
+      audio.peg(energy);
+      if (event.passive && energy > 0.35) audio.tone(220, 0.09, "triangle", 0.025, 360);
+      spawnNeonBurst(event.x, event.y, event.accent || activeTable.palette.secondary, 6, energy);
+      game.shake = Math.min(1.3, game.shake + 0.05 + energy * 0.07);
+      continue;
+    }
+    if (event.kind === "bumper") {
+      const energy = Math.min(2, event.impact / 600);
+      audio.peg(1.3);
+      audio.tone(420 + energy * 180, 0.11, "square", 0.03, 780 + energy * 220);
+      spawnNeonBurst(event.x, event.y, event.accent || activeTable.palette.tertiary, 12, 1.3);
+      game.shake = Math.min(1.5, game.shake + 0.14);
+      vibrate(10);
+      continue;
+    }
+    if (event.kind === "portal") {
+      audio.tone(540, 0.16, "sine", 0.045, 980);
+      audio.noise(0.12, 0.025, 2400);
+      spawnPortalBurst(event.x, event.y, event.accent || activeTable.palette.primary);
+      spawnPortalBurst(event.ex, event.ey, event.accentExit || activeTable.palette.secondary);
+      game.shake = Math.min(1.2, game.shake + 0.18);
+      vibrate([8, 30, 8]);
+      continue;
+    }
+    if (event.kind === "block") {
+      const energy = Math.min(2, event.impact / 700);
+      if (energy > 0.14) {
+        audio.wall(energy);
+        spawnNeonBurst(event.x, event.y, event.accent || activeTable.palette.primary, 5, energy);
+        if (energy > 0.5) game.shake = Math.min(1.2, game.shake + 0.06);
+      }
+    }
+  }
+}
+
 function attemptToolPlacement(point) {
   if (game.phase !== "ready" || !game.placingTool) return false;
   const type = game.placingTool;
@@ -1426,6 +1637,8 @@ function startRound() {
   game.drop = null;
   game.returnAnim = null;
   game.returnPos = null;
+  resetObstacles(obstacles);
+  randomizeObstacles(obstacles);
   particles.length = 0;
   ball.x = STAGE.x;
   ball.y = STAGE.y;
@@ -1597,7 +1810,8 @@ function launchBall(power) {
   ball.y = CUP.y - 2;
   ball.prevX = ball.x;
   ball.prevY = ball.y;
-  ball.vx = 0;
+  const launchJitter = activeTable.layout.launchJitter || 0;
+  ball.vx = launchJitter ? randomRange(-launchJitter, launchJitter) : 0;
   ball.vy = -launchSpeed(power);
   ball.trail.length = 0;
   ball.stallTime = 0;
@@ -1747,10 +1961,17 @@ function finishReturn() {
   hideBanner();
   hideResultCard();
   payoutFx.stop();
+  resetObstacles(obstacles);
   setPhase("idle");
   setPowerUI(0, "ready");
   setRoundBadge("ready", "等待投珠");
   hideHint();
+
+  if (pendingTableId) {
+    const next = pendingTableId;
+    pendingTableId = null;
+    if (next !== activeTable.id) applyTable(next, true);
+  }
 
   if (game.marbles < 5) {
     toast(account.canClaimRelief ? "弹珠不足，可领取 30 颗补助" : "弹珠不足，可前往商店兑换");
@@ -3123,16 +3344,28 @@ function draw(now) {
   }
 
   drawStaticLayer(now);
-  drawReturnRamp(now);
-  drawSlots(now);
-  drawMarquee(now);
-  drawPegField(now);
-  drawTools(now);
-  drawLaunchLane(now);
-  drawFocusGlow(now);
+  if (activeTable.art === "cyberpunk") {
+    drawCyberReturnRamp(ctx, now, game, activeTable);
+    drawCyberSlots(ctx, now, game, activeTable);
+    drawCyberMarquee(ctx, now, activeTable);
+    drawCyberPegs(ctx, now, pegs, activeTable);
+    drawObstacles(ctx, obstacles, now, activeTable.palette, { clipMainField: true });
+    drawCyberLaunchLane(ctx, now, game, activeTable);
+    drawCyberFocusGlow(ctx, now, game, activeTable);
+  } else {
+    drawReturnRamp(now);
+    drawSlots(now);
+    drawMarquee(now);
+    drawPegField(now);
+    drawTools(now);
+    drawObstacles(ctx, obstacles, now, activeTable.palette, { clipMainField: true });
+    drawLaunchLane(now);
+    drawFocusGlow(now);
+  }
   drawParticles();
   drawBall(now);
-  drawSpring(now);
+  if (activeTable.art === "cyberpunk") drawCyberSpring(ctx, now, game, activeTable);
+  else drawSpring(now);
 
   ctx.restore();
 
@@ -3146,6 +3379,10 @@ function draw(now) {
 let lastFrame = performance.now();
 
 function update(now, dt) {
+  // Moving cars, spinning rotors and portal cooldowns animate all the time,
+  // not just while the marble is in flight.
+  updateObstacles(obstacles, dt);
+
   // Gate easing
   if (Math.abs(game.gate - game.gateTarget) > 0.0001) {
     const speed = 4.8 * dt;
@@ -3314,7 +3551,8 @@ function rebuildStaticLayer() {
   const previousCtx = ctx;
   ctx = bufferCtx;
   try {
-    drawCabinet(performance.now());
+    if (activeTable.art === "cyberpunk") drawCyberCabinet(ctx, performance.now(), activeTable);
+    else drawCabinet(performance.now());
   } finally {
     ctx = previousCtx;
   }
@@ -3323,7 +3561,8 @@ function rebuildStaticLayer() {
 
 function drawStaticLayer(now) {
   if (!staticLayer) {
-    drawCabinet(now);
+    if (activeTable.art === "cyberpunk") drawCyberCabinet(ctx, now, activeTable);
+    else drawCabinet(now);
     return;
   }
   ctx.save();
@@ -3612,7 +3851,7 @@ helpDialog.addEventListener("click", (event) => {
 });
 
 resetBtn.addEventListener("click", () => {
-  const confirmed = window.confirm("重置本地存档？弹珠将回到 300 颗，游戏币、彩票、母球皮肤和设置都会清空。");
+  const confirmed = window.confirm("重置本地存档？弹珠将回到 300 颗，游戏币、彩票、母球皮肤、机台和设置都会清空。");
   if (!confirmed) return;
   account.reset();
   closeHelp();
@@ -3637,6 +3876,16 @@ document.addEventListener("visibilitychange", () => {
 function snapshot() {
   return {
     phase: game.phase,
+    table: activeTable.id,
+    tableName: activeTable.name,
+    obstacles: obstacles.map((obstacle) => ({
+      type: obstacle.type,
+      x: Math.round(obstacle.x ?? obstacle.a?.x ?? 0),
+      y: Math.round(obstacle.y ?? obstacle.a?.y ?? 0),
+      angle: obstacle.angle !== undefined ? Number(obstacle.angle.toFixed(2)) : undefined,
+      omega: obstacle.omega !== undefined ? Number(obstacle.omega.toFixed(2)) : undefined,
+      progress: obstacle.progress !== undefined ? Number(obstacle.progress.toFixed(1)) : undefined,
+    })),
     marbles: game.marbles,
     tickets: game.tickets,
     bet: game.bet,
@@ -3683,7 +3932,7 @@ function simulateLaunch(power = 0.8) {
     y: CUP.y - 2,
     prevX: CUP.x + 2,
     prevY: CUP.y - 2,
-    vx: 0,
+    vx: randomRange(-(activeTable.layout.launchJitter || 0), activeTable.layout.launchJitter || 0),
     vy: -launchSpeed(power),
     r: BALL_R,
     spin: 0,
@@ -3693,7 +3942,10 @@ function simulateLaunch(power = 0.8) {
   let leftLane = false;
   let bestY = b.y;
   const totalSteps = 240 * 28;
+  resetObstacles(obstacles);
+  randomizeObstacles(obstacles);
   for (let i = 0; i < totalSteps; i += 1) {
+    updateObstacles(obstacles, 1 / 240);
     stepBallPhysics(b, 1 / 240);
     bestY = Math.min(bestY, b.y);
     if (!leftLane && b.x < MAIN_RIGHT - 1) leftLane = true;
@@ -3730,7 +3982,7 @@ function debugTrace(power = 0.8, sampleEvery = 15) {
     y: CUP.y - 2,
     prevX: CUP.x + 2,
     prevY: CUP.y - 2,
-    vx: 0,
+    vx: randomRange(-(activeTable.layout.launchJitter || 0), activeTable.layout.launchJitter || 0),
     vy: -launchSpeed(power),
     r: BALL_R,
     spin: 0,
@@ -3739,7 +3991,10 @@ function debugTrace(power = 0.8, sampleEvery = 15) {
   };
   const points = [];
   let leftLane = false;
+  resetObstacles(obstacles);
+  randomizeObstacles(obstacles);
   for (let i = 0; i < 240 * 20; i += 1) {
+    updateObstacles(obstacles, 1 / 240);
     stepBallPhysics(b, 1 / 240);
     if (!leftLane && b.x < MAIN_RIGHT - 1) leftLane = true;
     if (i % sampleEvery === 0) {
@@ -3839,6 +4094,15 @@ function debugLanding(slotIndex = 0) {
   return true;
 }
 
+/** QA helper: switch tables without going through the shop. */
+function debugTable(id) {
+  if (!getTable(id) || getTable(id).id !== id) return false;
+  if (activeTable.id === id) return true;
+  if (game.phase !== "idle") return false;
+  applyTable(id);
+  return activeTable.id === id;
+}
+
 window.__MARBLE_DROP__ = {
   snapshot,
   simulate: debugSimulate,
@@ -3846,6 +4110,13 @@ window.__MARBLE_DROP__ = {
   trace: debugTrace,
   payout: debugPayout,
   landing: debugLanding,
+  table: debugTable,
+  get tables() {
+    return TABLE_LIST.map((table) => table.id);
+  },
+  get activeTable() {
+    return activeTable.id;
+  },
 };
 
 /* ── Init ────────────────────────────────────────────────── */
