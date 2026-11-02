@@ -39,6 +39,7 @@ import { DEFAULT_TABLE_ID, TABLE_LIST, getTable, hexToRgb } from "./tables.js";
 import {
   buildObstacles,
   resetObstacles,
+  randomizeObstacles,
   updateObstacles,
   collideObstacles,
   drawObstacles,
@@ -1637,6 +1638,7 @@ function startRound() {
   game.returnAnim = null;
   game.returnPos = null;
   resetObstacles(obstacles);
+  randomizeObstacles(obstacles);
   particles.length = 0;
   ball.x = STAGE.x;
   ball.y = STAGE.y;
@@ -3941,6 +3943,7 @@ function simulateLaunch(power = 0.8) {
   let bestY = b.y;
   const totalSteps = 240 * 28;
   resetObstacles(obstacles);
+  randomizeObstacles(obstacles);
   for (let i = 0; i < totalSteps; i += 1) {
     updateObstacles(obstacles, 1 / 240);
     stepBallPhysics(b, 1 / 240);
@@ -3989,6 +3992,7 @@ function debugTrace(power = 0.8, sampleEvery = 15) {
   const points = [];
   let leftLane = false;
   resetObstacles(obstacles);
+  randomizeObstacles(obstacles);
   for (let i = 0; i < 240 * 20; i += 1) {
     updateObstacles(obstacles, 1 / 240);
     stepBallPhysics(b, 1 / 240);

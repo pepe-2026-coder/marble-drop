@@ -13,7 +13,7 @@
    ============================================================ */
 
 import { MAIN_RIGHT } from "./config.js";
-import { clamp } from "./utils.js";
+import { clamp, randomRange } from "./utils.js";
 
 const TAU = Math.PI * 2;
 const randomRangeKick = (scale) => (Math.random() * 2 - 1) * scale;
@@ -141,6 +141,7 @@ export function buildObstacles(specs = []) {
           radius: Math.max(0, Number(spec.radius) || 0),
           restitution: Number(spec.restitution) || 0.34,
           flash: 0,
+          spawn: 0,
           lastEventAt: 0,
         };
     }
@@ -154,6 +155,7 @@ export function buildObstacles(specs = []) {
 export function resetObstacles(obstacles = []) {
   for (const obstacle of obstacles) {
     obstacle.flash = 0;
+    obstacle.spawn = 0;
     obstacle.lastEventAt = 0;
     if (obstacle.type === "mover") {
       obstacle.progress = clamp(Number(obstacle.offset) || 0, 0, 1) * obstacle.total;
@@ -175,10 +177,61 @@ export function resetObstacles(obstacles = []) {
   }
 }
 
+/**
+ * Reposition blocks that opt into `randomX` at the start of a round. This is
+ * used by the budget table's holographic ad boards: they are temporary props,
+ * not buildings, so moving between rounds is part of their fiction.
+ */
+export function randomizeObstacles(obstacles = []) {
+  const movable = obstacles.filter(
+    (obstacle) => obstacle.type === "block" && obstacle.randomX,
+  );
+  if (!movable.length) return;
+
+  const placed = [];
+  for (const obstacle of movable) {
+    const halfWidth = obstacle.w / 2;
+    const min = Math.max(Number(obstacle.randomX.min) || 0, 82 + halfWidth);
+    const max = Math.min(Number(obstacle.randomX.max) || MAIN_RIGHT, MAIN_RIGHT - halfWidth);
+    const gap = Number(obstacle.randomGap) || 20;
+    let x = (min + max) / 2;
+    let found = false;
+    let best = x;
+    let bestDistance = -Infinity;
+
+    for (let attempt = 0; attempt < 48; attempt += 1) {
+      const candidate = min + Math.random() * Math.max(0, max - min);
+      const nearest = placed.reduce(
+        (distance, other) => Math.min(distance, Math.abs(candidate - other.x)),
+        Infinity,
+      );
+      const clear = placed.every(
+        (other) => Math.abs(candidate - other.x) >= (obstacle.w + other.w) / 2 + gap,
+      );
+      if (clear) {
+        x = candidate;
+        found = true;
+        break;
+      }
+      if (nearest > bestDistance) {
+        bestDistance = nearest;
+        best = candidate;
+      }
+    }
+    if (!found) x = best;
+
+    obstacle.x = x;
+    obstacle.spawn = 1;
+    obstacle.flash = 0.7;
+    placed.push(obstacle);
+  }
+}
+
 export function updateObstacles(obstacles = [], dt) {
   if (!(dt > 0)) return;
   for (const obstacle of obstacles) {
     if (obstacle.flash > 0) obstacle.flash = Math.max(0, obstacle.flash - dt * 3.4);
+    if (obstacle.spawn > 0) obstacle.spawn = Math.max(0, obstacle.spawn - dt * 1.6);
 
     if (obstacle.type === "mover") {
       const previousX = obstacle.x;
@@ -653,6 +706,139 @@ function drawTower(ctx, obstacle, now, palette) {
   ctx.restore();
 }
 
+/** Holographic ad board used by the budget table. It is a temporary prop,
+    not a building, so it is re-projected at a new street position each round. */
+function drawBillboard(ctx, obstacle, now, palette) {
+  const w = obstacle.w;
+  const h = obstacle.h;
+  const accent = obstacle.accent || palette.primary;
+  const rgb = hexToRgb(accent);
+  const spawn = clamp(obstacle.spawn || 0, 0, 1);
+  const flicker = 0.76 + Math.sin(now * 0.008 + obstacle.x) * 0.14;
+
+  ctx.save();
+  ctx.translate(obstacle.x, obstacle.y);
+
+  // Projection beam above the screen while it is materialising.
+  if (spawn > 0.01) {
+    const beam = ctx.createLinearGradient(0, -h / 2 - 96, 0, -h / 2);
+    beam.addColorStop(0, `rgba(${rgb}, 0)`);
+    beam.addColorStop(0.72, `rgba(${rgb}, ${0.2 * spawn})`);
+    beam.addColorStop(1, `rgba(${rgb}, ${0.44 * spawn})`);
+    ctx.fillStyle = beam;
+    ctx.beginPath();
+    ctx.moveTo(-w * 0.32, -h / 2 - 96);
+    ctx.lineTo(w * 0.32, -h / 2 - 96);
+    ctx.lineTo(w * 0.48, -h / 2);
+    ctx.lineTo(-w * 0.48, -h / 2);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Floor glow / projector base.
+  const floor = ctx.createRadialGradient(0, h / 2 + 3, 1, 0, h / 2 + 3, w * 0.8);
+  floor.addColorStop(0, `rgba(${rgb}, ${0.3 + flashLike(obstacle) * 0.2})`);
+  floor.addColorStop(1, `rgba(${rgb}, 0)`);
+  ctx.fillStyle = floor;
+  ctx.beginPath();
+  ctx.ellipse(0, h / 2 + 3, w * 0.8, 11, 0, 0, TAU);
+  ctx.fill();
+
+  // Base bar.
+  ctx.fillStyle = "rgba(7, 10, 20, 0.96)";
+  roundRectPath(ctx, -w * 0.4, h / 2 - 10, w * 0.8, 10, 4);
+  ctx.fill();
+  ctx.strokeStyle = `rgba(${rgb}, 0.5)`;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = `rgba(${rgb}, ${0.6 + spawn * 0.3})`;
+  ctx.fillRect(-w * 0.22, h / 2 - 7, w * 0.44, 1.2);
+
+  // Screen frame.
+  ctx.save();
+  ctx.shadowColor = `rgba(${rgb}, 0.5)`;
+  ctx.shadowBlur = 14 + spawn * 16;
+  const frame = ctx.createLinearGradient(0, -h / 2, 0, h / 2 - 10);
+  frame.addColorStop(0, "rgba(13, 26, 42, 0.98)");
+  frame.addColorStop(0.55, "rgba(7, 13, 27, 0.98)");
+  frame.addColorStop(1, "rgba(17, 9, 22, 0.98)");
+  ctx.fillStyle = frame;
+  roundRectPath(ctx, -w / 2, -h / 2, w, h - 10, 6);
+  ctx.fill();
+  ctx.restore();
+
+  ctx.strokeStyle = `rgba(${rgb}, ${0.62 + flashLike(obstacle) * 0.3})`;
+  ctx.lineWidth = 1.6;
+  roundRectPath(ctx, -w / 2, -h / 2, w, h - 10, 6);
+  ctx.stroke();
+
+  // Screen content.
+  ctx.save();
+  roundRectPath(ctx, -w / 2 + 4, -h / 2 + 4, w - 8, h - 18, 4);
+  ctx.clip();
+  const screen = ctx.createLinearGradient(-w / 2, -h / 2, w / 2, h / 2);
+  screen.addColorStop(0, `rgba(${rgb}, ${0.2 * flicker})`);
+  screen.addColorStop(0.55, `rgba(${rgb}, 0.06)`);
+  screen.addColorStop(1, `rgba(${rgb}, ${0.16 * flicker})`);
+  ctx.fillStyle = screen;
+  ctx.fillRect(-w / 2, -h / 2, w, h - 10);
+
+  // Animated scan bars.
+  const scanY = -h / 2 + ((now * 0.045 + obstacle.x * 3) % (h - 10));
+  const scan = ctx.createLinearGradient(0, scanY - 8, 0, scanY + 8);
+  scan.addColorStop(0, `rgba(${rgb}, 0)`);
+  scan.addColorStop(0.5, `rgba(${rgb}, 0.28)`);
+  scan.addColorStop(1, `rgba(${rgb}, 0)`);
+  ctx.fillStyle = scan;
+  ctx.fillRect(-w / 2, scanY - 8, w, 16);
+
+  ctx.fillStyle = `rgba(${rgb}, 0.18)`;
+  for (let y = -h / 2 + 8; y < h / 2 - 12; y += 5) {
+    ctx.fillRect(-w / 2 + 4, y, w - 8, 1);
+  }
+
+  ctx.fillStyle = "#f8ffff";
+  ctx.font = '900 12px "SFMono-Regular", monospace';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.shadowColor = accent;
+  ctx.shadowBlur = 12;
+  ctx.fillText(obstacle.sign || "AD", 0, -1);
+  ctx.restore();
+
+  ctx.fillStyle = `rgba(${rgb}, 0.8)`;
+  ctx.font = '700 6px "SFMono-Regular", monospace';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("HOLO · TEMP", 0, h / 2 - 15);
+
+  // Small corner screws / clamps.
+  for (const sx of [-1, 1]) {
+    for (const sy of [-1, 1]) {
+      ctx.fillStyle = "rgba(210, 245, 255, 0.55)";
+      ctx.beginPath();
+      ctx.arc(sx * (w / 2 - 4), sy * (h / 2 - 7), 1.2, 0, TAU);
+      ctx.fill();
+    }
+  }
+
+  // Impact flash ring.
+  const flash = Math.max(obstacle.flash || 0, 0);
+  if (flash > 0.02) {
+    ctx.strokeStyle = `rgba(255, 255, 255, ${flash * 0.7})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, Math.max(w, h) * 0.58 + (1 - flash) * 20, 0, TAU);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
+function flashLike(obstacle) {
+  return Math.max(obstacle.flash || 0, obstacle.spawn || 0);
+}
+
 function drawCar(ctx, obstacle, now, palette) {
   const w = obstacle.w;
   const h = obstacle.h;
@@ -1036,7 +1222,10 @@ export function drawObstacles(ctx, obstacles = [], now, palette = {}, options = 
   }
 
   for (const obstacle of obstacles) {
-    if (obstacle.type === "block") drawTower(ctx, obstacle, now, colors);
+    if (obstacle.type === "block") {
+      if (obstacle.style === "billboard") drawBillboard(ctx, obstacle, now, colors);
+      else drawTower(ctx, obstacle, now, colors);
+    }
   }
   for (const obstacle of obstacles) {
     if (obstacle.type === "rotor") drawRotor(ctx, obstacle, now);

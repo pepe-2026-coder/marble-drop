@@ -186,25 +186,41 @@ export function drawTablePreview(canvas, table) {
       ctx.stroke();
     } else if (obstacle.type === "block") {
       const color = obstacle.accent || primary;
-      ctx.fillStyle = "rgba(8, 16, 32, 0.96)";
-      roundRectPath(
-        ctx,
-        obstacle.x - obstacle.w / 2,
-        obstacle.y - obstacle.h / 2,
-        obstacle.w,
-        obstacle.h,
-        obstacle.radius,
-      );
-      ctx.fill();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2.4;
-      ctx.stroke();
-      ctx.fillStyle = color;
-      ctx.globalAlpha = 0.28;
-      for (let wy = obstacle.y - obstacle.h / 2 + 8; wy < obstacle.y + obstacle.h / 2 - 8; wy += 13) {
-        ctx.fillRect(obstacle.x - obstacle.w / 2 + 7, wy, obstacle.w - 14, 3);
+      const left = obstacle.x - obstacle.w / 2;
+      const top = obstacle.y - obstacle.h / 2;
+      if (obstacle.style === "billboard") {
+        // Holographic ad board: dark screen, neon frame and a small base.
+        ctx.fillStyle = "rgba(6, 12, 24, 0.96)";
+        roundRectPath(ctx, left, top, obstacle.w, obstacle.h - 7, 5);
+        ctx.fill();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2.2;
+        ctx.stroke();
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.32;
+        ctx.fillRect(left + 6, top + 8, obstacle.w - 12, obstacle.h - 25);
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = "rgba(7, 10, 20, 0.98)";
+        ctx.fillRect(left + 7, top + obstacle.h - 9, obstacle.w - 14, 6);
+        ctx.font = '700 11px "SFMono-Regular", monospace';
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillStyle = "rgba(255,255,255,0.8)";
+        ctx.fillText(obstacle.sign || "AD", obstacle.x, top + obstacle.h / 2 - 3);
+      } else {
+        ctx.fillStyle = "rgba(8, 16, 32, 0.96)";
+        roundRectPath(ctx, left, top, obstacle.w, obstacle.h, obstacle.radius);
+        ctx.fill();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2.4;
+        ctx.stroke();
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.28;
+        for (let wy = top + 8; wy < top + obstacle.h - 8; wy += 13) {
+          ctx.fillRect(left + 7, wy, obstacle.w - 14, 3);
+        }
+        ctx.globalAlpha = 1;
       }
-      ctx.globalAlpha = 1;
     } else if (obstacle.type === "rotor") {
       ctx.save();
       ctx.translate(obstacle.x, obstacle.y);
