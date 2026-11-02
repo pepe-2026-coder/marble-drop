@@ -4,168 +4,393 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0d0b09" />
-    <meta
-      name="description"
-      content="竖屏物理弹珠台：选择 5–99 颗弹珠，拉下弹簧发射母球，击中奖槽赢取倍率奖励与彩票。"
-    />
+    <meta name="description" content="竖屏物理弹珠台：街机模式、游戏币与彩票经济、物理碰撞和弹簧发射。" />
     <title>弹珠台 · MARBLE DROP</title>
-    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./src/styles/game.css" />
+    <link rel="stylesheet" href="./src/styles/shell.css" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2315100b'/%3E%3Ccircle cx='32' cy='32' r='16' fill='%23d93b2c'/%3E%3Ccircle cx='26' cy='25' r='5' fill='%23ffd9b0' opacity='.8'/%3E%3C/svg%3E" />
   </head>
   <body>
     <div class="page-glow" aria-hidden="true"></div>
-    <div class="app">
-      <header class="hud">
-        <div class="brand" aria-label="弹珠台 Marble Drop">
-          <span class="brand-mark" aria-hidden="true"><i></i></span>
-          <span class="brand-copy">
-            <span class="brand-en">MARBLE DROP</span>
-            <span class="brand-cn">弹珠台</span>
+
+    <!-- ── 主界面 ───────────────────────────────────────────── -->
+    <section class="screen menu-screen" id="menuScreen">
+      <div class="menu-shell">
+        <header class="menu-header">
+          <div class="brand menu-brand" aria-label="弹珠台 Marble Drop">
+            <span class="brand-mark" aria-hidden="true"><i></i></span>
+            <span class="brand-copy">
+              <span class="brand-en">MARBLE DROP</span>
+              <span class="brand-cn">弹珠台</span>
+            </span>
+          </div>
+          <span class="menu-version">ARCADE No.08</span>
+        </header>
+
+        <div class="menu-hero">
+          <div class="menu-cabinet" aria-hidden="true">
+            <div class="menu-arch">
+              <span class="menu-arch-label">DROP</span>
+              <span class="menu-arch-ball"></span>
+            </div>
+          </div>
+          <div class="menu-title">
+            <span class="menu-kicker">PHYSICAL PACHINKO</span>
+            <h1>弹珠台</h1>
+            <p>拉下弹簧，让重力与碰撞决定这一局。</p>
+          </div>
+        </div>
+
+        <div class="wallet-row" aria-label="账户余额">
+          <span class="wallet-chip">
+            <i>弹珠</i>
+            <b id="menuMarbles">300</b>
+          </span>
+          <span class="wallet-chip">
+            <i>游戏币</i>
+            <b id="menuCoins">0</b>
+          </span>
+          <span class="wallet-chip">
+            <i>彩票</i>
+            <b id="menuTickets">0</b>
           </span>
         </div>
 
-        <div class="hud-side">
-          <div class="hud-stats">
-            <div class="stat">
-              <span class="stat-label">弹珠</span>
-              <strong id="marbleCount">100</strong>
-            </div>
-            <button class="stat stat-ticket" id="ticketStat" type="button" aria-label="打开彩票商店">
-              <span class="stat-label">彩票</span>
-              <strong id="ticketCount">0</strong>
-            </button>
+        <div class="menu-rules" aria-label="街机兑换规则">
+          <span class="menu-rules-kicker">TODAY'S ARCADE</span>
+          <div class="menu-rate-row">
+            <span><b>1 彩票</b><em>→</em><strong>5 游戏币</strong></span>
+            <span><b>1 游戏币</b><em>→</em><strong>5 弹珠</strong></span>
           </div>
-          <button class="icon-btn" id="soundBtn" type="button" aria-label="关闭音效" aria-pressed="true">
-            <svg class="icon-on" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 9.5v5h3.4L12 18V6L7.4 9.5H4Z" />
-              <path d="M15.3 8.4a5 5 0 0 1 0 7.2M18 5.8a8.5 8.5 0 0 1 0 12.4" />
-            </svg>
-            <svg class="icon-off" viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M4 9.5v5h3.4L12 18V6L7.4 9.5H4Z" />
-              <path d="m15.5 9.5 5 5m0-5-5 5" />
-            </svg>
-          </button>
-          <button class="text-btn" id="helpBtn" type="button">玩法</button>
+          <p>中奖每满 30 颗返还获得 1 张彩票 · 弹珠不足可领 30 颗补助</p>
         </div>
-      </header>
 
-      <main class="stage" id="stage">
-        <div class="machine" id="machine">
-          <canvas id="board" width="720" height="1240" aria-label="物理弹珠台游戏面板"></canvas>
+        <div class="menu-relief" id="menuRelief" hidden>
+          <span>弹珠耗尽，且没有游戏币和彩票。</span>
+          <button id="menuReliefBtn" type="button">领取 30 颗补助</button>
+        </div>
 
-          <div class="round-badge" id="roundBadge" aria-live="polite">
-            <span class="round-dot"></span>
-            <span id="roundText">等待投珠</span>
-          </div>
-
-          <button class="level-badge" id="levelBadge" type="button" aria-label="打开改装工坊">
-            <span class="level-badge-top">
-              <span>Lv.<b id="levelNumber">1</b></span>
-              <span class="level-badge-cta">改装</span>
+        <nav class="menu-actions" aria-label="主菜单">
+          <button class="menu-btn menu-primary" id="arcadeBtn" type="button">
+            <span class="menu-btn-main">
+              <span class="menu-btn-icon" aria-hidden="true">▶</span>
+              <span>
+                <strong>街机模式</strong>
+                <small>300 颗弹珠开局 · 物理落点定输赢</small>
+              </span>
             </span>
-            <span class="level-badge-track"><i id="levelXpFill"></i></span>
-            <span class="level-sp-badge" id="levelSpBadge" hidden>技能点 0</span>
+            <span class="menu-btn-arrow" aria-hidden="true">→</span>
           </button>
 
-          <div class="multiplier-banner" id="multiplierBanner" aria-hidden="true">
-            <span class="banner-kicker">本局倍率</span>
-            <strong id="bannerMult">×2</strong>
-            <span class="banner-sub"><b id="bannerSlots">4</b> 个奖槽亮灯</span>
-          </div>
+          <button class="menu-btn menu-locked" id="challengeBtn" type="button" disabled>
+            <span class="menu-btn-main">
+              <span class="menu-btn-icon" aria-hidden="true">◇</span>
+              <span>
+                <strong>闯关模式</strong>
+                <small>积分、技能树与机关布阵 · 正在打磨</small>
+              </span>
+            </span>
+            <span class="menu-badge">未开放</span>
+          </button>
 
-          <div class="hint-bubble" id="hintBubble">
-            <span class="hint-arrow" aria-hidden="true">↧</span>
-            <span id="hintText">拉下右下角弹簧，松手发射</span>
-          </div>
-
-          <div class="result-card" id="resultCard" role="status" aria-live="polite" aria-hidden="true">
-            <span class="result-eyebrow" id="resultEyebrow">RESULT</span>
-            <h2 id="resultTitle">中奖 ×2</h2>
-            <div class="result-payout" id="resultPayout">+40 颗弹珠</div>
-            <div class="result-ticket" id="resultTicket">获得 1 张彩票</div>
-            <div class="result-progress" id="resultProgress">本局积分 +0</div>
-            <div class="result-foot" id="resultFoot">母球正在返回限位器…</div>
-          </div>
-        </div>
-      </main>
-
-      <section class="dock" aria-label="游戏控制">
-        <div class="dock-idle" id="dockIdle">
-          <div class="dock-head">
-            <span>投入弹珠</span>
-            <span class="dock-note">5–99 颗 · 余额 <b id="dockBalance">100</b></span>
-          </div>
-          <div class="bet-row">
-            <button class="step-btn" id="betMinus" type="button" aria-label="减少投入">−</button>
-            <label class="bet-display">
-              <input id="betInput" type="number" inputmode="numeric" min="5" max="99" step="1" value="20" aria-label="本局投入弹珠数" />
-              <span>颗</span>
-            </label>
-            <button class="step-btn" id="betPlus" type="button" aria-label="增加投入">+</button>
-            <button class="start-btn" id="startBtn" type="button">
-              <span id="startLabel">开始游戏</span>
-              <small>投入 <b id="startBetText">20</b> 颗</small>
+          <div class="menu-btn-row">
+            <button class="menu-btn menu-secondary" id="shopBtn" type="button">
+              <span class="menu-btn-icon" aria-hidden="true">◈</span>
+              <span><strong>商店</strong><small>彩票 / 游戏币 / 弹珠</small></span>
+            </button>
+            <button class="menu-btn menu-secondary" id="optionsBtn" type="button">
+              <span class="menu-btn-icon" aria-hidden="true">⚙</span>
+              <span><strong>选项</strong><small>音量与反馈</small></span>
             </button>
           </div>
-          <div class="quick-row" id="quickRow">
-            <button type="button" data-bet="5">5</button>
-            <button type="button" data-bet="10">10</button>
-            <button type="button" data-bet="20" class="is-active">20</button>
-            <button type="button" data-bet="50">50</button>
-            <button type="button" data-bet="99">99</button>
-            <button type="button" class="refill-btn" id="refillBtn" hidden>补给 +100</button>
-            <span class="quick-spacer"></span>
-            <span class="payout-note">中奖奖槽 <i class="mini-light"></i></span>
-          </div>
-        </div>
 
-        <div class="dock-play" id="dockPlay" hidden>
-          <div class="live-head">
-            <span class="live-dot" id="liveDot"></span>
-            <span id="playStatus" aria-live="polite">奖槽亮灯中…</span>
+          <button class="menu-exit" id="exitBtn" type="button">退出游戏</button>
+        </nav>
+
+        <footer class="menu-foot">
+          <span>DROP · BOUNCE · REPEAT</span>
+          <span>本机存档</span>
+        </footer>
+      </div>
+    </section>
+
+    <!-- ── 街机模式 ─────────────────────────────────────────── -->
+    <section class="screen game-screen" id="gameScreen" hidden>
+      <div class="app">
+        <header class="hud">
+          <div class="brand" aria-label="弹珠台 Marble Drop">
+            <span class="brand-mark" aria-hidden="true"><i></i></span>
+            <span class="brand-copy">
+              <span class="brand-en">MARBLE DROP</span>
+              <span class="brand-cn">弹珠台</span>
+            </span>
           </div>
-          <div class="play-meta">
-            <span>投注 <b id="playBet">20</b></span>
-            <span>倍率 <b id="playMult">×2</b></span>
-            <span>奖槽 <b id="playSlots">4</b></span>
-            <span class="play-lane" id="playLane">等待开启限位器</span>
-          </div>
-          <div class="tool-tray" id="toolTray" hidden>
-            <span class="tool-tray-label">布阵</span>
-            <button class="tool-chip" id="magnetToolBtn" type="button" aria-pressed="false">
-              <span class="tool-symbol tool-symbol-magnet">◎</span>
-              <span class="tool-name">磁力钉</span>
-              <b class="tool-count" id="magnetToolCount">1</b>
-            </button>
-            <button class="tool-chip" id="padToolBtn" type="button" aria-pressed="false">
-              <span class="tool-symbol tool-symbol-pad">◉</span>
-              <span class="tool-name">弹力板</span>
-              <b class="tool-count" id="padToolCount">1</b>
-            </button>
-            <button class="tool-skip" id="toolSkipBtn" type="button">跳过布阵</button>
-          </div>
-          <div class="pull-meter" id="pullMeter" data-zone="idle" role="meter" aria-label="弹簧拉力" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-            <div class="pull-meter-head">
-              <span class="pull-label">弹簧拉力</span>
-              <span class="pull-zone" id="pullZone">待拉杆</span>
-              <strong class="pull-percent" id="pullPercent">0%</strong>
+
+          <div class="hud-side">
+            <div class="hud-stats">
+              <div class="stat">
+                <span class="stat-label">弹珠</span>
+                <strong id="marbleCount">300</strong>
+              </div>
+              <div class="stat">
+                <span class="stat-label">彩票</span>
+                <strong id="ticketCount">0</strong>
+              </div>
             </div>
-            <div class="pull-track">
-              <div class="pull-fill" id="pullFill"></div>
-              <i class="pull-tick" style="left: 25%"></i>
-              <i class="pull-tick" style="left: 50%"></i>
-              <i class="pull-tick" style="left: 75%"></i>
+            <button class="icon-btn" id="homeBtn" type="button" aria-label="返回主界面">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m4.5 10.8 7.5-6 7.5 6" />
+                <path d="M6.7 9.5v8.2h10.6V9.5" />
+                <path d="M10.3 17.7v-4.5h3.4v4.5" />
+              </svg>
+            </button>
+            <button class="text-btn" id="helpBtn" type="button">玩法</button>
+          </div>
+        </header>
+
+        <main class="stage" id="stage">
+          <div class="machine" id="machine">
+            <canvas id="board" width="720" height="1240" aria-label="物理弹珠台游戏面板"></canvas>
+
+            <div class="round-badge" id="roundBadge" aria-live="polite">
+              <span class="round-dot"></span>
+              <span id="roundText">等待投珠</span>
+            </div>
+
+            <!-- 闯关模式的原型控件保留但未挂载；街机模式不显示等级与机关。 -->
+            <button class="level-badge" id="levelBadge" type="button" aria-label="打开改装工坊" hidden>
+              <span class="level-badge-top">
+                <span>Lv.<b id="levelNumber">1</b></span>
+                <span class="level-badge-cta">改装</span>
+              </span>
+              <span class="level-badge-track"><i id="levelXpFill"></i></span>
+              <span class="level-sp-badge" id="levelSpBadge" hidden>技能点 0</span>
+            </button>
+
+            <div class="multiplier-banner" id="multiplierBanner" aria-hidden="true">
+              <span class="banner-kicker">本局倍率</span>
+              <strong id="bannerMult">×2</strong>
+              <span class="banner-sub"><b id="bannerSlots">4</b> 个奖槽亮灯</span>
+            </div>
+
+            <div class="hint-bubble" id="hintBubble">
+              <span class="hint-arrow" aria-hidden="true">↧</span>
+              <span id="hintText">拉下右下角弹簧，松手发射</span>
+            </div>
+
+            <div class="result-card" id="resultCard" role="status" aria-live="polite" aria-hidden="true">
+              <span class="result-eyebrow" id="resultEyebrow">RESULT</span>
+              <h2 id="resultTitle">中奖 ×2</h2>
+              <div class="result-payout" id="resultPayout">+40 颗弹珠</div>
+              <div class="result-ticket" id="resultTicket">获得 1 张彩票</div>
+              <div class="result-progress" id="resultProgress" hidden></div>
+              <div class="result-foot" id="resultFoot">母球正在返回限位器…</div>
             </div>
           </div>
-        </div>
-      </section>
-    </div>
+        </main>
 
+        <section class="dock" aria-label="游戏控制">
+          <div class="dock-idle" id="dockIdle">
+            <div class="dock-head">
+              <span>投入弹珠</span>
+              <span class="dock-note">5–99 颗 · 余额 <b id="dockBalance">300</b></span>
+            </div>
+            <div class="bet-row">
+              <button class="step-btn" id="betMinus" type="button" aria-label="减少投入">−</button>
+              <label class="bet-display">
+                <input id="betInput" type="number" inputmode="numeric" min="5" max="99" step="1" value="20" aria-label="本局投入弹珠数" />
+                <span>颗</span>
+              </label>
+              <button class="step-btn" id="betPlus" type="button" aria-label="增加投入">+</button>
+              <button class="start-btn" id="startBtn" type="button">
+                <span id="startLabel">开始游戏</span>
+                <small>投入 <b id="startBetText">20</b> 颗</small>
+              </button>
+            </div>
+            <div class="quick-row" id="quickRow">
+              <button type="button" data-bet="5">5</button>
+              <button type="button" data-bet="10">10</button>
+              <button type="button" data-bet="20" class="is-active">20</button>
+              <button type="button" data-bet="50">50</button>
+              <button type="button" data-bet="99">99</button>
+              <button type="button" class="refill-btn" id="refillBtn" hidden>补助 30 珠</button>
+              <span class="quick-spacer"></span>
+              <span class="payout-note">中奖奖槽 <i class="mini-light"></i></span>
+            </div>
+          </div>
+
+          <div class="dock-play" id="dockPlay" hidden>
+            <div class="live-head">
+              <span class="live-dot" id="liveDot"></span>
+              <span id="playStatus" aria-live="polite">奖槽亮灯中…</span>
+            </div>
+            <div class="play-meta">
+              <span>投注 <b id="playBet">20</b></span>
+              <span>倍率 <b id="playMult">×2</b></span>
+              <span>奖槽 <b id="playSlots">4</b></span>
+              <span class="play-lane" id="playLane">等待开启限位器</span>
+            </div>
+            <div class="tool-tray" id="toolTray" hidden>
+              <span class="tool-tray-label">布阵</span>
+              <button class="tool-chip" id="magnetToolBtn" type="button" aria-pressed="false">
+                <span class="tool-symbol tool-symbol-magnet">◎</span>
+                <span class="tool-name">磁力钉</span>
+                <b class="tool-count" id="magnetToolCount">1</b>
+              </button>
+              <button class="tool-chip" id="padToolBtn" type="button" aria-pressed="false">
+                <span class="tool-symbol tool-symbol-pad">◉</span>
+                <span class="tool-name">弹力板</span>
+                <b class="tool-count" id="padToolCount">1</b>
+              </button>
+              <button class="tool-skip" id="toolSkipBtn" type="button">跳过布阵</button>
+            </div>
+            <div class="pull-meter" id="pullMeter" data-zone="idle" role="meter" aria-label="弹簧拉力" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <div class="pull-meter-head">
+                <span class="pull-label">弹簧拉力</span>
+                <span class="pull-zone" id="pullZone">待拉杆</span>
+                <strong class="pull-percent" id="pullPercent">0%</strong>
+              </div>
+              <div class="pull-track">
+                <div class="pull-fill" id="pullFill"></div>
+                <i class="pull-tick" style="left: 25%"></i>
+                <i class="pull-tick" style="left: 50%"></i>
+                <i class="pull-tick" style="left: 75%"></i>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <!-- ── 商店 ─────────────────────────────────────────────── -->
+    <section class="screen sub-screen" id="shopScreen" hidden>
+      <div class="panel-shell">
+        <header class="screen-head">
+          <button class="screen-back" id="shopBack" type="button" aria-label="返回">←</button>
+          <div class="screen-title">
+            <span class="screen-kicker">EXCHANGE COUNTER</span>
+            <h1>奖品兑换所</h1>
+          </div>
+          <span class="screen-mark" aria-hidden="true">◈</span>
+        </header>
+
+        <div class="wallet-row shop-wallet" aria-label="账户余额">
+          <span class="wallet-chip"><i>弹珠</i><b id="shopMarbles">300</b></span>
+          <span class="wallet-chip"><i>游戏币</i><b id="shopCoins">0</b></span>
+          <span class="wallet-chip"><i>彩票</i><b id="shopTickets">0</b></span>
+        </div>
+
+        <div class="exchange-card">
+          <div class="exchange-head">
+            <span class="exchange-icon ticket-icon" aria-hidden="true">票</span>
+            <div>
+              <h2>彩票兑换游戏币</h2>
+              <p>中奖返还每满 30 颗弹珠，就会获得 1 张彩票。</p>
+            </div>
+          </div>
+          <div class="exchange-rate"><b>1 彩票</b><span>→</span><b>5 游戏币</b></div>
+          <div class="exchange-actions">
+            <button class="exchange-btn primary" id="ticketExchangeOne" type="button">兑换 1 张</button>
+            <button class="exchange-btn" id="ticketExchangeAll" type="button">全部兑换</button>
+          </div>
+        </div>
+
+        <div class="exchange-card">
+          <div class="exchange-head">
+            <span class="exchange-icon coin-icon" aria-hidden="true">币</span>
+            <div>
+              <h2>游戏币购买弹珠</h2>
+              <p>游戏币是街机厅的通用货币，购买后立即计入余额。</p>
+            </div>
+          </div>
+          <div class="exchange-rate"><b>1 游戏币</b><span>→</span><b>5 弹珠</b></div>
+          <div class="exchange-actions">
+            <button class="exchange-btn primary" id="coinBuySmall" type="button">购买 5 珠</button>
+            <button class="exchange-btn" id="coinBuyLarge" type="button">购买 25 珠</button>
+          </div>
+        </div>
+
+        <div class="shop-relief" id="shopRelief" hidden>
+          <span>弹珠、游戏币和彩票都空了。</span>
+          <button id="shopReliefBtn" type="button">领取 30 颗补助</button>
+        </div>
+
+        <div class="exchange-card teaser-card">
+          <div class="exchange-head">
+            <span class="exchange-icon skin-icon" aria-hidden="true">◉</span>
+            <div>
+              <h2>母球皮肤</h2>
+              <p>用彩票兑换限定母球外观。首批皮肤正在制作中。</p>
+            </div>
+          </div>
+          <div class="teaser-foot">
+            <span class="teaser-tag">COMING SOON</span>
+            <span class="teaser-note">皮肤只改变外观，不改变物理属性</span>
+          </div>
+        </div>
+
+        <p class="shop-note">兑换即时到账。没有游戏币和彩票、且弹珠不足 5 颗时，可领取 30 颗补助。</p>
+      </div>
+    </section>
+
+    <!-- ── 选项 ─────────────────────────────────────────────── -->
+    <section class="screen sub-screen" id="optionsScreen" hidden>
+      <div class="panel-shell">
+        <header class="screen-head">
+          <button class="screen-back" id="optionsBack" type="button" aria-label="返回">←</button>
+          <div class="screen-title">
+            <span class="screen-kicker">SYSTEM SETTINGS</span>
+            <h1>选项</h1>
+          </div>
+          <span class="screen-mark" aria-hidden="true">⚙</span>
+        </header>
+
+        <div class="settings-card">
+          <div class="setting-block">
+            <div class="setting-label">
+              <span><b>音效音量</b><small>调节弹簧、碰撞和中奖音效</small></span>
+              <output id="volumeValue" for="volumeRange">65%</output>
+            </div>
+            <input id="volumeRange" class="volume-range" type="range" min="0" max="100" step="1" value="65" aria-label="音效音量" />
+          </div>
+
+          <button class="setting-row" id="muteToggle" type="button" aria-pressed="false">
+            <span><b>静音</b><small>暂时关闭所有游戏音效</small></span>
+            <span class="switch" aria-hidden="true"><i></i></span>
+          </button>
+
+          <button class="setting-row" id="hapticsToggle" type="button" aria-pressed="true">
+            <span><b>触感反馈</b><small>支持的手机会在关键操作时轻震</small></span>
+            <span class="switch" aria-hidden="true"><i></i></span>
+          </button>
+        </div>
+
+        <div class="settings-actions">
+          <button class="settings-link" id="optionsHelpBtn" type="button">玩法说明</button>
+          <button class="settings-link danger" id="optionsResetBtn" type="button">重置本地存档</button>
+        </div>
+
+        <p class="options-note">设置会自动保存在本机。街机厅的余额、彩票和游戏币也会保留。</p>
+      </div>
+    </section>
+
+    <!-- ── 退出 ─────────────────────────────────────────────── -->
+    <section class="screen exit-screen" id="exitScreen" hidden>
+      <div class="exit-card">
+        <span class="exit-mark" aria-hidden="true">◎</span>
+        <span class="screen-kicker">SESSION ENDED</span>
+        <h1>下次再来</h1>
+        <p>浏览器通常不允许网页自动关闭标签页。你可以直接关闭本页，或重新进入街机厅。</p>
+        <button class="primary-btn" id="reenterBtn" type="button">重新进入</button>
+      </div>
+    </section>
+
+    <!-- ── 玩法说明 ─────────────────────────────────────────── -->
     <dialog class="help-dialog" id="helpDialog">
       <div class="dialog-head">
         <div>
           <span class="dialog-kicker">HOW TO PLAY</span>
-          <h2>弹珠台玩法</h2>
+          <h2>街机模式玩法</h2>
         </div>
         <button class="dialog-close" id="helpClose" type="button" aria-label="关闭玩法说明">×</button>
       </div>
@@ -174,7 +399,7 @@
         <li><b>释放母球</b><span>限位器自动打开，母球落入右下发射舱。</span></li>
         <li><b>线性调节拉力，松手发射</b><span>按住右下角弹簧把手向下拖动，底部力度条会实时显示弱力 / 中力 / 强力 / 满力。松手发射，满力可冲到圆顶最高点。</span></li>
         <li><b>落入奖槽即可中奖</b><span>返还「投入 × 倍率」颗弹珠。每满 30 颗返还弹珠，额外获得 1 张彩票。</span></li>
-        <li><b>布阵与改装</b><span>发射前可点击下方「磁力钉 / 弹力板」，再点击机台放置。每局结算积分，升级获得技能点；点击右上角 Lv. 徽章进入改装工坊，用技能点强化机关，用彩票购买一次性机关和母球外观。</span></li>
+        <li><b>街机经济</b><span>1 张彩票可在商店兑换 5 游戏币，1 游戏币可购买 5 颗弹珠。当弹珠不足 5 颗、且没有游戏币和彩票时，可免费领取 30 颗补助。</span></li>
       </ol>
       <div class="odds-card">
         <div class="odds-title">倍率与奖槽</div>
@@ -187,14 +412,15 @@
         </div>
         <p>倍率越高，中奖槽位越少。母球最终落入 12 个槽位中的任意一个，奖槽由物理碰撞决定。</p>
       </div>
-      <p class="key-hint">桌面端也可按住 <b>空格</b> 蓄力，松开空格发射。点击机台右上角的 <b>Lv.</b> 徽章，或直接点击顶部 <b>彩票</b> 数字，打开改装工坊。</p>
+      <p class="key-hint">桌面端也可按住 <b>空格</b> 蓄力，松开空格发射。机台右上角的房子按钮可返回主界面。</p>
       <div class="dialog-actions">
-        <button class="ghost-btn" id="resetBtn" type="button">重置本地进度</button>
+        <button class="ghost-btn" id="resetBtn" type="button">重置本地存档</button>
         <button class="primary-btn" id="helpDone" type="button">知道了</button>
       </div>
     </dialog>
 
-    <dialog class="help-dialog workshop-dialog" id="workshopDialog">
+    <!-- 闯关模式原型 UI：保留代码但暂不开放，街机模式不会挂载。 -->
+    <dialog class="help-dialog workshop-dialog" id="workshopDialog" hidden>
       <div class="dialog-head">
         <div>
           <span class="dialog-kicker">TUNING WORKSHOP</span>
@@ -202,27 +428,18 @@
         </div>
         <button class="dialog-close" id="workshopClose" type="button" aria-label="关闭改装工坊">×</button>
       </div>
-
       <div class="workshop-summary">
-        <div class="ws-level">
-          <span>等级</span>
-          <strong>Lv.<b id="wsLevel">1</b></strong>
-        </div>
+        <div class="ws-level"><span>等级</span><strong>Lv.<b id="wsLevel">1</b></strong></div>
         <div class="ws-progress">
           <div class="ws-progress-head"><span>积分</span><span id="wsXpText">0 / 80</span></div>
           <div class="ws-progress-track"><i id="wsXpFill"></i></div>
         </div>
-        <div class="ws-resources">
-          <span>技能点 <b id="wsSkillPoints">0</b></span>
-          <span>彩票 <b id="wsTickets">0</b></span>
-        </div>
+        <div class="ws-resources"><span>技能点 <b id="wsSkillPoints">0</b></span><span>彩票 <b id="wsTickets">0</b></span></div>
       </div>
-
       <div class="ws-tabs" id="wsTabs">
         <button type="button" data-ws-tab="skills" class="is-active">技能树</button>
         <button type="button" data-ws-tab="shop">彩票商店</button>
       </div>
-
       <div class="ws-panel" id="wsSkillsPanel"></div>
       <div class="ws-panel" id="wsShopPanel" hidden></div>
       <p class="ws-footnote">技能点来自升级；一次性机关和母球皮肤用彩票购买。机关在发射前布阵。</p>
@@ -230,6 +447,6 @@
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-    <script src="./js/game.js"></script>
+    <script type="module" src="./src/main.js"></script>
   </body>
 </html>

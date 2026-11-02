@@ -3,101 +3,41 @@
    纯 Canvas + 自研 2D 物理的小型竖屏弹珠台
    ============================================================ */
 
-const W = 720;
-const H = 1240;
-const TAU = Math.PI * 2;
-
-const INNER = {
-  left: 82,
-  right: 638,
-  bottom: 1180,
-  cx: 360,
-  cy: 330,
-  rx: 278,
-  ry: 285,
-};
-
-const MAIN_RIGHT = 584;
-const PEGS = {
-  r: 6.2,
-  startY: 362,
-  gapY: 50,
-  gapX: 51,
-  rows: 10,
-  evenCount: 10,
-  oddCount: 9,
-  firstX: 103.5,
-  halfOffsetX: 25.5,
-};
-
-const SLOT = {
-  x0: 84,
-  x1: MAIN_RIGHT,
-  count: 12,
-  top: 900,
-  floor: 1000,
-  sensorY: 948,
-};
-SLOT.width = (SLOT.x1 - SLOT.x0) / SLOT.count;
-
-const LANE = {
-  left: MAIN_RIGHT,
-  right: INNER.right,
-  dividerTop: 278,
-  dividerBottom: 1038,
-};
-const STAGE = { x: 610, y: 1080 };
-const GATE = { x0: 582, x1: 640, y: 1092 };
-const CUP = { x: 610, y: 1122 };
-const SPRING = { x: 610, baseHandleY: 1188, radius: 22 };
-const RAMP = { x0: 96, y0: 1048, x1: 594, y1: 1074 };
-
-const BALL_R = 10;
-const GRAVITY = 1450;
-const PHYS_STEP = 1 / 240;
-
-const MULTIPLIERS = [
-  { value: 2, weight: 35, slots: 4 },
-  { value: 4, weight: 26, slots: 3 },
-  { value: 6, weight: 20, slots: 2 },
-  { value: 8, weight: 12, slots: 1 },
-  { value: 10, weight: 7, slots: 1 },
-];
-
-const STORAGE_KEY = "marble-drop-save-v1";
-const INITIAL_MARBLES = 100;
-
-/* ── Utils ───────────────────────────────────────────────── */
-
-const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
-const lerp = (a, b, t) => a + (b - a) * t;
-const randomRange = (min, max) => min + Math.random() * (max - min);
-const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
-const easeInCubic = (t) => t * t * t;
-const easeInOutCubic = (t) =>
-  t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-
-function mulberry32(seed) {
-  let a = seed >>> 0;
-  return function () {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-const decoRandom = mulberry32(0x4d415242);
-const speckles = Array.from({ length: 260 }, () => ({
-  x: 88 + decoRandom() * 544,
-  y: 44 + decoRandom() * 1120,
-  r: 0.35 + decoRandom() * 0.8,
-  a: 0.018 + decoRandom() * 0.045,
-}));
+import { account } from "../account.js";
+import { audio, vibrate } from "../audio.js";
+import { toast } from "../ui/toast.js";
+import {
+  W,
+  H,
+  TAU,
+  INNER,
+  MAIN_RIGHT,
+  PEGS,
+  SLOT,
+  LANE,
+  STAGE,
+  GATE,
+  CUP,
+  SPRING,
+  RAMP,
+  BALL_R,
+  GRAVITY,
+  PHYS_STEP,
+  MULTIPLIERS,
+  speckles,
+} from "./config.js";
+import {
+  clamp,
+  lerp,
+  randomRange,
+  easeOutCubic,
+  easeInCubic,
+  easeInOutCubic,
+} from "./utils.js";
 
 /* ── DOM ─────────────────────────────────────────────────── */
 
+const gameScreen = document.getElementById("gameScreen");
 const canvas = document.getElementById("board");
 let ctx = canvas.getContext("2d", { alpha: true });
 const mainCtx = ctx;
@@ -108,9 +48,8 @@ const stageEl = document.getElementById("stage");
 
 const marbleCountEl = document.getElementById("marbleCount");
 const ticketCountEl = document.getElementById("ticketCount");
-const ticketStat = document.getElementById("ticketStat");
 const dockBalanceEl = document.getElementById("dockBalance");
-const soundBtn = document.getElementById("soundBtn");
+const homeBtn = document.getElementById("homeBtn");
 const helpBtn = document.getElementById("helpBtn");
 const helpDialog = document.getElementById("helpDialog");
 const helpClose = document.getElementById("helpClose");
@@ -177,141 +116,7 @@ const wsShopPanel = document.getElementById("wsShopPanel");
 
 /* ── Audio ───────────────────────────────────────────────── */
 
-class SoundEngine {
-  constructor() {
-    this.ctx = null;
-    this.master = null;
-    this.noiseBuffer = null;
-    this.lastPegAt = 0;
-    this.lastWallAt = 0;
-  }
 
-  init() {
-    if (this.ctx) {
-      if (this.ctx.state === "suspended") this.ctx.resume().catch(() => {});
-      return;
-    }
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
-    this.ctx = new Ctx();
-    this.master = this.ctx.createGain();
-    this.master.gain.value = 0.32;
-    this.master.connect(this.ctx.destination);
-    this.noiseBuffer = this.createNoiseBuffer();
-  }
-
-  createNoiseBuffer() {
-    const length = Math.floor(this.ctx.sampleRate * 0.6);
-    const buffer = this.ctx.createBuffer(1, length, this.ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < length; i += 1) data[i] = Math.random() * 2 - 1;
-    return buffer;
-  }
-
-  tone(freq, duration, type = "sine", volume = 0.08, slideTo = null, delay = 0) {
-    if (!this.ctx || !game.soundOn) return;
-    const t = this.ctx.currentTime + delay;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(Math.max(30, freq), t);
-    if (slideTo) {
-      osc.frequency.exponentialRampToValueAtTime(Math.max(30, slideTo), t + duration);
-    }
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, volume), t + 0.008);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
-    osc.connect(gain);
-    gain.connect(this.master);
-    osc.start(t);
-    osc.stop(t + duration + 0.03);
-  }
-
-  noise(duration = 0.15, volume = 0.05, cutoff = 1300, delay = 0) {
-    if (!this.ctx || !game.soundOn) return;
-    const t = this.ctx.currentTime + delay;
-    const source = this.ctx.createBufferSource();
-    source.buffer = this.noiseBuffer;
-    const filter = this.ctx.createBiquadFilter();
-    filter.type = "bandpass";
-    filter.frequency.value = cutoff;
-    filter.Q.value = 0.8;
-    const gain = this.ctx.createGain();
-    gain.gain.setValueAtTime(0.0001, t);
-    gain.gain.exponentialRampToValueAtTime(volume, t + 0.012);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
-    source.connect(filter);
-    filter.connect(gain);
-    gain.connect(this.master);
-    source.start(t);
-    source.stop(t + duration + 0.03);
-  }
-
-  gate() {
-    this.noise(0.09, 0.028, 1900);
-    this.tone(240, 0.08, "triangle", 0.035, 160);
-  }
-
-  light(index) {
-    const scale = [523.25, 587.33, 659.25, 783.99, 880];
-    this.tone(scale[index % scale.length], 0.13, "sine", 0.055, scale[index % scale.length] * 1.01);
-  }
-
-  peg(energy = 1) {
-    if (!this.ctx) return;
-    const now = this.ctx.currentTime;
-    if (now - this.lastPegAt < 0.024) return;
-    this.lastPegAt = now;
-    const vol = clamp(0.012 + energy * 0.022, 0.012, 0.042);
-    this.tone(randomRange(620, 1160), 0.055, "triangle", vol, randomRange(850, 1450));
-  }
-
-  wall(energy = 1) {
-    if (!this.ctx) return;
-    const now = this.ctx.currentTime;
-    if (now - this.lastWallAt < 0.045) return;
-    this.lastWallAt = now;
-    this.noise(0.05, clamp(0.008 + energy * 0.009, 0.008, 0.022), 480);
-  }
-
-  spring(strength = 0.7) {
-    this.noise(0.11, 0.025 + strength * 0.02, 750);
-    this.tone(105, 0.15, "sawtooth", 0.025, 60);
-  }
-
-  launch(power = 0.8) {
-    this.noise(0.18, 0.05, 1000);
-    this.tone(110 + power * 30, 0.28, "sine", 0.065, 360 + power * 190);
-  }
-
-  win(isJackpot = false) {
-    const notes = isJackpot
-      ? [523.25, 659.25, 783.99, 1046.5, 1318.5]
-      : [392, 523.25, 659.25, 783.99];
-    notes.forEach((freq, index) => {
-      this.tone(freq, 0.34, "sine", 0.075, freq * 1.005, index * 0.09);
-      this.tone(freq / 2, 0.3, "triangle", 0.025, null, index * 0.09);
-    });
-    if (isJackpot) this.tone(1567.98, 0.6, "sine", 0.05, 1567.98, 0.5);
-  }
-
-  lose() {
-    this.tone(180, 0.28, "sine", 0.035, 110);
-    this.noise(0.12, 0.018, 280);
-  }
-
-  ticket() {
-    [659.25, 783.99, 1046.5].forEach((freq, i) =>
-      this.tone(freq, 0.22, "triangle", 0.05, null, i * 0.075),
-    );
-  }
-
-  click() {
-    this.tone(420, 0.06, "triangle", 0.028, 300);
-  }
-}
-
-const audio = new SoundEngine();
 
 /* ── Progression data ────────────────────────────────────── */
 
@@ -544,54 +349,14 @@ function getPadConfig() {
   };
 }
 
-/* ── Persistence ─────────────────────────────────────────── */
-
-function loadSave() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return null;
-    return {
-      marbles: clamp(Math.round(Number(parsed.marbles) || INITIAL_MARBLES), 0, 9_999_999),
-      tickets: clamp(Math.round(Number(parsed.tickets) || 0), 0, 9_999_999),
-      soundOn: parsed.soundOn !== false,
-      bet: clamp(Math.round(Number(parsed.bet) || 20), 5, 99),
-      progress: normalizeProgress(parsed.progress),
-    };
-  } catch {
-    return null;
-  }
-}
-
-function saveGame() {
-  try {
-    localStorage.setItem(
-      STORAGE_KEY,
-      JSON.stringify({
-        marbles: game.marbles,
-        tickets: game.tickets,
-        soundOn: game.soundOn,
-        bet: game.bet,
-        progress: game.progress,
-      }),
-    );
-  } catch {
-    /* storage can be unavailable in private mode */
-  }
-}
-
 /* ── Game state ──────────────────────────────────────────── */
-
-const saved = loadSave();
 
 const game = {
   phase: "idle", // idle | starting | ready | charging | flying | returning
-  marbles: saved?.marbles ?? INITIAL_MARBLES,
-  tickets: saved?.tickets ?? 0,
-  soundOn: saved?.soundOn ?? true,
-  bet: saved?.bet ?? 20,
-  progress: saved?.progress ?? defaultProgress(),
+  marbles: account.marbles,
+  tickets: account.tickets,
+  bet: account.bet,
+  progress: defaultProgress(),
   round: 0,
   multiplier: 2,
   slotCount: 4,
@@ -1050,20 +815,26 @@ function pickLitSlots(count) {
 
 /* ── UI helpers ──────────────────────────────────────────── */
 
+function saveGame() {
+  account.save();
+}
+
 function setMarbles(value, bump = false) {
-  game.marbles = Math.max(0, Math.round(value));
+  const next = Math.max(0, Math.round(Number(value) || 0));
+  account.setMarbles(next);
+  game.marbles = account.marbles;
   marbleCountEl.textContent = String(game.marbles);
   dockBalanceEl.textContent = String(game.marbles);
   if (bump) bumpNumber(marbleCountEl);
   updateBetUI();
-  saveGame();
 }
 
 function setTickets(value, bump = false) {
-  game.tickets = Math.max(0, Math.round(value));
+  const next = Math.max(0, Math.round(Number(value) || 0));
+  account.setTickets(next);
+  game.tickets = account.tickets;
   ticketCountEl.textContent = String(game.tickets);
   if (bump) bumpNumber(ticketCountEl);
-  saveGame();
 }
 
 function bumpNumber(el) {
@@ -1098,11 +869,29 @@ function updateBetUI() {
     button.disabled = value > game.marbles;
   });
 
-  const refillMode = game.marbles < 5 && game.phase === "idle";
-  refillBtn.hidden = !refillMode;
-  quickRow.classList.toggle("needs-refill", refillMode);
+  const lowFunds = game.marbles < 5 && game.phase === "idle";
+  const useRelief = lowFunds && account.canClaimRelief;
+  const goShop = lowFunds && !useRelief && (account.coins > 0 || account.tickets > 0);
+  refillBtn.hidden = !(useRelief || goShop);
+  refillBtn.textContent = useRelief ? "补助 30 珠" : "去商店";
+  quickRow.classList.toggle("needs-refill", lowFunds);
   dockBalanceEl.textContent = String(game.marbles);
 }
+
+function syncAccountUI(state) {
+  game.marbles = state.marbles;
+  game.tickets = state.tickets;
+  if (game.phase === "idle") {
+    const maxBet = Math.max(5, Math.min(99, game.marbles));
+    game.bet = clamp(game.bet, 5, maxBet);
+  }
+  marbleCountEl.textContent = String(game.marbles);
+  ticketCountEl.textContent = String(game.tickets);
+  dockBalanceEl.textContent = String(game.marbles);
+  updateBetUI();
+}
+
+account.subscribe(syncAccountUI);
 
 function setPhase(phase) {
   game.phase = phase;
@@ -1601,7 +1390,7 @@ function pulsePowerTick(power) {
   const step = Math.min(4, Math.floor(clamp(power, 0, 1) * 4 + 0.0001));
   if (step === game.hapticStep) return;
   if (step > game.hapticStep && step > 0) {
-    if (navigator.vibrate) navigator.vibrate(8);
+    vibrate(8);
     audio.tone(460 + step * 65, 0.035, "sine", 0.018);
   }
   game.hapticStep = step;
@@ -1638,14 +1427,6 @@ function hideHint() {
   window.clearTimeout(game.hintTimer);
 }
 
-function toast(message, duration = 1900) {
-  toastEl.textContent = message;
-  toastEl.classList.add("is-visible");
-  window.clearTimeout(game.toastTimer);
-  game.toastTimer = window.setTimeout(() => {
-    toastEl.classList.remove("is-visible");
-  }, duration);
-}
 
 function showResultCard(result) {
   if (!result) return;
@@ -1670,18 +1451,8 @@ function showResultCard(result) {
     resultTicket.textContent = "";
     resultFoot.textContent = "母球即将沿回球坡道返回限位器…";
   }
-  if (result.progress) {
-    const progress = result.progress;
-    const toolText = progress.tool > 0 ? ` · 机关 +${progress.tool}` : "";
-    resultProgress.classList.toggle("is-levelup", progress.levelsGained > 0);
-    if (progress.levelsGained > 0) {
-      resultProgress.innerHTML = `本局积分 +${progress.total}${toolText}<br><b>升级 Lv.${progress.levelAfter} · 技能点 +${progress.levelsGained}</b>`;
-    } else {
-      resultProgress.innerHTML = `本局积分 +${progress.total}${toolText} · Lv.${progress.levelAfter} ${progress.xp}/${progress.need}`;
-    }
-  } else {
-    resultProgress.textContent = "";
-  }
+  resultProgress.hidden = true;
+  resultProgress.textContent = "";
   resultCard.classList.add("is-visible");
 }
 
@@ -1708,7 +1479,7 @@ function startRound() {
   audio.init();
   if (game.phase !== "idle") return;
   if (game.marbles < 5) {
-    toast("弹珠不足，先领取补给吧");
+    toast(account.canClaimRelief ? "弹珠不足，先领取补助吧" : "弹珠不足，去商店兑换吧");
     return;
   }
   if (game.bet > game.marbles) {
@@ -1743,8 +1514,6 @@ function startRound() {
   ball.trail.length = 0;
   ball.stallTime = 0;
   ball.spin = 0;
-  prepareToolRound();
-
   const config = pickMultiplier();
   const lit = pickLitSlots(config.slots);
   game.multiplier = config.value;
@@ -1804,9 +1573,9 @@ function openGate() {
     hideBanner();
     setPhase("ready");
     setPowerUI(0, "ready");
-    setRoundBadge("ready", "待布阵");
-    setPlayStatus("先布阵，或直接拉下弹簧", "点击下方机关按钮", true);
-    showHint("先点下方机关布阵，或直接拉下弹簧", 5200);
+    setRoundBadge("ready", "待发射");
+    setPlayStatus("拉下弹簧，松手发射", "满力可冲上圆顶", true);
+    showHint("拉到底，满力冲上圆顶最高点", 5200);
     audio.tone(392, 0.12, "sine", 0.04, 523.25);
   }, 980);
 }
@@ -1925,7 +1694,7 @@ function launchBall(power) {
   game.shake = Math.min(2, game.shake + 0.7);
   audio.spring(power);
   audio.launch(power);
-  if (navigator.vibrate) navigator.vibrate(14);
+  vibrate(14);
 }
 
 function resolveLanding() {
@@ -1938,22 +1707,21 @@ function resolveLanding() {
   game.lastSlot = index;
   game.flashSlot = index;
   game.flashAt = performance.now();
-  const progress = awardRoundProgress(payout);
-  game.result = { won, payout, tickets, slotIndex: index, progress };
+  game.result = { won, payout, tickets, slotIndex: index };
 
   if (payout > 0) {
     setMarbles(game.marbles + payout, true);
     if (tickets > 0) setTickets(game.tickets + tickets, true);
-    saveGame();
   }
+  account.recordRound(won);
 
   spawnSlotBurst(ball.x, 982, won);
   if (won) {
     if (tickets > 0) spawnTicketBurst();
     audio.win(game.multiplier >= 8);
-    if (navigator.vibrate) navigator.vibrate([18, 40, 25]);
+    vibrate([18, 40, 25]);
   } else {
-    if (navigator.vibrate) navigator.vibrate(18);
+    vibrate(18);
     window.setTimeout(() => audio.lose(), 160);
   }
 
@@ -2037,16 +1805,24 @@ function finishReturn() {
   hideHint();
 
   if (game.marbles < 5) {
-    toast("弹珠不足 5 颗，可领取补给");
+    toast(account.canClaimRelief ? "弹珠不足，可领取 30 颗补助" : "弹珠不足，可前往商店兑换");
   }
   updateBetUI();
 }
 
-function refillMarbles() {
+function handleLowFunds() {
   if (game.phase !== "idle") return;
-  setMarbles(game.marbles + 100, true);
-  toast("补给 100 颗弹珠");
-  audio.ticket();
+  if (account.canClaimRelief) {
+    const amount = account.claimRelief();
+    if (amount > 0) {
+      setMarbles(account.marbles, true);
+      toast(`领取补助 ${amount} 颗弹珠`);
+      audio.ticket();
+    }
+    return;
+  }
+  audio.click();
+  window.dispatchEvent(new CustomEvent("marble:shop"));
 }
 
 /* ── Render: geometry helpers ────────────────────────────── */
@@ -3330,14 +3106,13 @@ function update(now, dt) {
         // Safety net: a ball that cannot clear the lane falls back into the
         // launch cup. Treat that as a miss and return it to the limiter.
         game.landingResolved = true;
-        const progress = awardRoundProgress(0);
         game.result = {
           won: false,
           payout: 0,
           tickets: 0,
           slotIndex: getSlotIndex(clamp(ball.x, SLOT.x0 + 1, SLOT.x1 - 1)),
-          progress,
         };
+        account.recordRound(false);
         game.lastSlot = game.result.slotIndex;
         game.flashSlot = game.lastSlot;
         game.flashAt = now;
@@ -3392,6 +3167,11 @@ function update(now, dt) {
 }
 
 function frame(now) {
+  if (gameScreen?.hidden) {
+    lastFrame = now;
+    requestAnimationFrame(frame);
+    return;
+  }
   const dt = Math.min(0.033, Math.max(0, (now - lastFrame) / 1000));
   lastFrame = now;
   update(now, dt);
@@ -3463,6 +3243,12 @@ function fitMachine() {
 const resizeObserver = new ResizeObserver(fitMachine);
 resizeObserver.observe(stageEl);
 window.addEventListener("resize", fitMachine);
+window.addEventListener("marble:game-shown", () => {
+  requestAnimationFrame(() => {
+    fitMachine();
+    requestAnimationFrame(fitMachine);
+  });
+});
 
 /* ── Input ───────────────────────────────────────────────── */
 
@@ -3543,6 +3329,7 @@ window.addEventListener("pointerup", (event) => {
 });
 
 window.addEventListener("keydown", (event) => {
+  if (gameScreen?.hidden) return;
   const target = event.target;
   const isTextInput =
     target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
@@ -3571,6 +3358,7 @@ window.addEventListener("keydown", (event) => {
 });
 
 window.addEventListener("keyup", (event) => {
+  if (gameScreen?.hidden) return;
   if (event.code === "Space" && game.phase === "charging" && game.chargeMode === "keyboard") {
     event.preventDefault();
     releaseKeyboardCharge();
@@ -3584,8 +3372,9 @@ function setBet(value, announce = false) {
   const maxBet = Math.max(5, Math.min(99, game.marbles));
   const next = clamp(Math.round(Number(value) || 5), 5, maxBet);
   game.bet = next;
+  account.setBet(next);
   updateBetUI();
-  if (announce) saveGame();
+  // setBet is persisted through the account store.
 }
 
 betMinus.addEventListener("click", () => {
@@ -3643,8 +3432,6 @@ toolSkipBtn.addEventListener("click", () => {
   clearToolPlacement(true);
 });
 
-levelBadge.addEventListener("click", () => openWorkshop("skills"));
-ticketStat.addEventListener("click", () => openWorkshop("shop"));
 workshopClose.addEventListener("click", closeWorkshop);
 workshopDialog.addEventListener("click", (event) => {
   if (event.target === workshopDialog) closeWorkshop();
@@ -3664,21 +3451,17 @@ wsShopPanel.addEventListener("click", (event) => {
 
 refillBtn.addEventListener("click", () => {
   audio.init();
-  refillMarbles();
+  handleLowFunds();
 });
 
-soundBtn.addEventListener("click", () => {
-  game.soundOn = !game.soundOn;
-  soundBtn.setAttribute("aria-pressed", String(game.soundOn));
-  soundBtn.setAttribute("aria-label", game.soundOn ? "关闭音效" : "开启音效");
-  saveGame();
-  if (game.soundOn) {
-    audio.init();
-    audio.ticket();
-    toast("音效已开启");
-  } else {
-    toast("音效已关闭");
+homeBtn.addEventListener("click", () => {
+  audio.init();
+  audio.click();
+  if (game.phase !== "idle") {
+    toast("本局结束后再返回主界面");
+    return;
   }
+  window.dispatchEvent(new CustomEvent("marble:home"));
 });
 
 helpBtn.addEventListener("click", () => {
@@ -3700,57 +3483,11 @@ helpDialog.addEventListener("click", (event) => {
 });
 
 resetBtn.addEventListener("click", () => {
-  const confirmed = window.confirm("重置本地进度？弹珠回到 100 颗，彩票、等级、技能和商店收藏都会清空。");
+  const confirmed = window.confirm("重置本地存档？弹珠将回到 300 颗，游戏币、彩票和设置都会清空。");
   if (!confirmed) return;
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    /* ignore */
-  }
-  clearScheduled();
-  window.clearTimeout(game.hideResultTimer);
-  game.phase = "idle";
-  game.marbles = INITIAL_MARBLES;
-  game.tickets = 0;
-  game.bet = 20;
-  game.round = 0;
-  game.result = null;
-  game.progress = defaultProgress();
-  game.placingTool = null;
-  game.toolAvailable = { magnet: 0, pad: 0 };
-  game.toolBaseCharges = { magnet: 0, pad: 0 };
-  game.toolPlaced = { magnet: 0, pad: 0 };
-  game.toolScore = 0;
-  activeMagnets.length = 0;
-  activePads.length = 0;
-  game.litSlots.clear();
-  game.litReveal.clear();
-  game.returnAnim = null;
-  game.returnPos = null;
-  game.gate = 0;
-  game.gateTarget = 0;
-  game.drop = null;
-  game.charge = 0;
-  game.charging = false;
-  game.chargeMode = null;
-  ball.x = STAGE.x;
-  ball.y = STAGE.y;
-  ball.vx = 0;
-  ball.vy = 0;
-  ball.trail.length = 0;
-  particles.length = 0;
-  setMarbles(INITIAL_MARBLES, true);
-  setTickets(0, true);
-  updateLevelBadge();
-  setPhase("idle");
-  setPowerUI(0, "ready");
-  setRoundBadge("ready", "等待投珠");
-  hideBanner();
-  hideHint();
-  hideResultCard();
-  updateBetUI();
+  account.reset();
   closeHelp();
-  toast("本地进度已重置");
+  window.location.reload();
 });
 
 // Tap the canvas anywhere after settling is ignored, but pointerup outside is
@@ -3941,8 +3678,6 @@ function initUI() {
   marbleCountEl.textContent = String(game.marbles);
   ticketCountEl.textContent = String(game.tickets);
   dockBalanceEl.textContent = String(game.marbles);
-  soundBtn.setAttribute("aria-pressed", String(game.soundOn));
-  soundBtn.setAttribute("aria-label", game.soundOn ? "关闭音效" : "开启音效");
   updateBetUI();
   setPhase("idle");
   setPowerUI(0, "ready");
