@@ -113,6 +113,108 @@ function chassisPath(ctx) {
   ctx.closePath();
 }
 
+/** Velvet, gold filigree and card-suit watermarks for the premium abyss
+    cabinet. This sits under every interactive object so it never hides a
+    collision read. */
+function drawAbyssBackdrop(ctx, palette) {
+  // Deep red velvet drapes down both rails.
+  for (const side of [0, 1]) {
+    const x = side ? INNER.right : INNER.left;
+    const dir = side ? -1 : 1;
+    const drape = ctx.createLinearGradient(x, 320, x + dir * 86, 820);
+    drape.addColorStop(0, "rgba(72, 8, 24, 0.55)");
+    drape.addColorStop(0.5, "rgba(36, 3, 13, 0.28)");
+    drape.addColorStop(1, "rgba(8, 1, 4, 0)");
+    ctx.fillStyle = drape;
+    ctx.beginPath();
+    ctx.moveTo(x, 300);
+    ctx.lineTo(x + dir * 86, 336);
+    ctx.lineTo(x + dir * 86, 760);
+    ctx.lineTo(x, 820);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = `rgba(${palette.secondaryRgb}, 0.16)`;
+    ctx.lineWidth = 1;
+    for (let i = 1; i < 5; i += 1) {
+      ctx.beginPath();
+      ctx.moveTo(x + dir * i * 17, 322 + i * 7);
+      ctx.quadraticCurveTo(
+        x + dir * (i * 17 + 12),
+        560,
+        x + dir * i * 17,
+        790 - i * 8,
+      );
+      ctx.stroke();
+    }
+  }
+
+  // Pointed gold niches behind the upper pin field.
+  for (const cx of [196, 524]) {
+    ctx.save();
+    ctx.translate(cx, 330);
+    ctx.strokeStyle = `rgba(${palette.secondaryRgb}, 0.14)`;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(-56, 124);
+    ctx.lineTo(-56, 8);
+    ctx.quadraticCurveTo(-56, -44, 0, -92);
+    ctx.quadraticCurveTo(56, -44, 56, 8);
+    ctx.lineTo(56, 124);
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(${palette.primaryRgb}, 0.09)`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-48, 116);
+    ctx.lineTo(-48, 6);
+    ctx.quadraticCurveTo(-48, -36, 0, -78);
+    ctx.quadraticCurveTo(48, -36, 48, 6);
+    ctx.lineTo(48, 116);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Four suits as ghostly watermarks in the lower field.
+  const suits = [
+    ["♠", 126, 930, -0.12],
+    ["♥", 594, 930, 0.12],
+    ["♦", 126, 1032, 0.08],
+    ["♣", 594, 1032, -0.08],
+  ];
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = '900 98px "Avenir Next", "PingFang SC", serif';
+  for (const [glyph, x, y, rot] of suits) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    ctx.fillStyle =
+      glyph === "♥" || glyph === "♦"
+        ? `rgba(${palette.primaryRgb}, 0.045)`
+        : `rgba(${palette.secondaryRgb}, 0.04)`;
+    ctx.fillText(glyph, 0, 0);
+    ctx.restore();
+  }
+  ctx.restore();
+
+  // Gold pinstripes and a tiny house seal on the launch-lane shoulder.
+  ctx.strokeStyle = `rgba(${palette.secondaryRgb}, 0.16)`;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(108, 286);
+  ctx.bezierCurveTo(188, 238, 252, 214, 360, 212);
+  ctx.bezierCurveTo(468, 214, 532, 238, 612, 286);
+  ctx.stroke();
+  ctx.setLineDash([2, 9]);
+  ctx.strokeStyle = `rgba(${palette.secondaryRgb}, 0.12)`;
+  ctx.beginPath();
+  ctx.moveTo(108, 300);
+  ctx.bezierCurveTo(188, 252, 252, 228, 360, 226);
+  ctx.bezierCurveTo(468, 228, 532, 252, 612, 300);
+  ctx.stroke();
+  ctx.setLineDash([]);
+}
+
 function drawBolt(ctx, x, y, radius = 3.2, accent = "rgba(130, 230, 255, 0.32)") {
   ctx.save();
   ctx.fillStyle = "rgba(4, 9, 18, 0.92)";
@@ -136,12 +238,20 @@ export function drawCyberCabinet(ctx, now, table) {
   const palette = paletteOf(table);
   const points = archPoints(table);
   const simple = table?.variant === "retro";
+  const abyss = table?.variant === "abyss";
 
   // Outer chassis.
   const chassis = ctx.createLinearGradient(0, 0, 0, H);
-  chassis.addColorStop(0, "#101a33");
-  chassis.addColorStop(0.42, "#0a1124");
-  chassis.addColorStop(1, "#03050b");
+  if (abyss) {
+    chassis.addColorStop(0, "#2a0a12");
+    chassis.addColorStop(0.34, "#15040a");
+    chassis.addColorStop(0.7, "#0b0205");
+    chassis.addColorStop(1, "#030102");
+  } else {
+    chassis.addColorStop(0, "#101a33");
+    chassis.addColorStop(0.42, "#0a1124");
+    chassis.addColorStop(1, "#03050b");
+  }
   chassisPath(ctx);
   ctx.fillStyle = chassis;
   ctx.fill();
@@ -160,10 +270,17 @@ export function drawCyberCabinet(ctx, now, table) {
 
   // Playfield base.
   const field = ctx.createLinearGradient(0, 40, 0, 1180);
-  field.addColorStop(0, "#0b1830");
-  field.addColorStop(0.42, "#070f20");
-  field.addColorStop(0.78, "#050a17");
-  field.addColorStop(1, "#03060e");
+  if (abyss) {
+    field.addColorStop(0, "#22070f");
+    field.addColorStop(0.34, "#12040a");
+    field.addColorStop(0.7, "#090206");
+    field.addColorStop(1, "#030102");
+  } else {
+    field.addColorStop(0, "#0b1830");
+    field.addColorStop(0.42, "#070f20");
+    field.addColorStop(0.78, "#050a17");
+    field.addColorStop(1, "#03060e");
+  }
   fieldPath(ctx, table);
   ctx.fillStyle = field;
   ctx.fill();
@@ -175,19 +292,21 @@ export function drawCyberCabinet(ctx, now, table) {
 
   // Ambient city glow behind the dome.
   const domeGlow = ctx.createRadialGradient(360, 210, 20, 360, 210, 410);
-  domeGlow.addColorStop(0, `rgba(${palette.primaryRgb}, 0.2)`);
-  domeGlow.addColorStop(0.48, `rgba(${palette.secondaryRgb}, 0.08)`);
+  domeGlow.addColorStop(0, `rgba(${palette.primaryRgb}, ${abyss ? 0.18 : 0.2})`);
+  domeGlow.addColorStop(0.48, `rgba(${palette.secondaryRgb}, ${abyss ? 0.14 : 0.08})`);
   domeGlow.addColorStop(1, "rgba(0, 0, 0, 0)");
   ctx.fillStyle = domeGlow;
   ctx.fillRect(60, 40, 600, 520);
   const lowGlow = ctx.createRadialGradient(360, 1060, 20, 360, 1060, 430);
-  lowGlow.addColorStop(0, `rgba(${palette.secondaryRgb}, 0.12)`);
+  lowGlow.addColorStop(0, `rgba(${palette.secondaryRgb}, ${abyss ? 0.18 : 0.12})`);
   lowGlow.addColorStop(1, "rgba(0, 0, 0, 0)");
   ctx.fillStyle = lowGlow;
   ctx.fillRect(60, 720, 600, 480);
 
+  if (abyss) drawAbyssBackdrop(ctx, palette);
+
   // Neon grid.
-  ctx.strokeStyle = `rgba(${palette.primaryRgb}, 0.055)`;
+  ctx.strokeStyle = `rgba(${abyss ? palette.secondaryRgb : palette.primaryRgb}, ${abyss ? 0.035 : 0.055})`;
   ctx.lineWidth = 1;
   for (let x = 90; x <= 630; x += 38) {
     ctx.beginPath();
@@ -423,7 +542,9 @@ export function drawCyberMarquee(ctx, now, table) {
       ? "QUANTUM PACHINKO · No.91"
       : table.id === "dusk"
         ? "RETRO PACHINKO · No.14"
-        : "CYBER PACHINKO · No.77",
+        : table.id === "abyss"
+          ? "VELVET WAGER · No.13"
+          : "CYBER PACHINKO · No.77",
     360,
     170,
     2.4,
@@ -781,7 +902,11 @@ export function drawCyberSlots(ctx, now, game, table) {
   ctx.font = '700 7px "SFMono-Regular", monospace';
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText("L U C K Y   S L O T S", 333, SLOT.top - 23);
+  ctx.fillText(
+    table?.variant === "abyss" ? "P R I Z E   P O O L" : "L U C K Y   S L O T S",
+    333,
+    SLOT.top - 23,
+  );
 
   ctx.restore();
 }

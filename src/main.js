@@ -257,6 +257,7 @@ function renderTableShop(state) {
       isEquipped ? "is-equipped" : "",
       owned ? "is-owned" : "is-locked",
       table.art === "cyberpunk" ? "is-cyber" : "is-classic",
+      table.id === "abyss" ? "is-abyss" : "",
     ]
       .filter(Boolean)
       .join(" ");

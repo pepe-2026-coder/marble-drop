@@ -56,6 +56,26 @@ const DUSK_ARCH = [
   { x: 638, y: 278 },
 ];
 
+/** A pointed gothic ceiling for the abyss table. The high central spire
+    leaves a clear drop line into the wheel below. */
+const ABYSS_ARCH = [
+  { x: 82, y: 278 },
+  { x: 88, y: 216 },
+  { x: 112, y: 158 },
+  { x: 154, y: 110 },
+  { x: 208, y: 78 },
+  { x: 272, y: 60 },
+  { x: 326, y: 52 },
+  { x: 360, y: 42 },
+  { x: 394, y: 52 },
+  { x: 448, y: 60 },
+  { x: 512, y: 78 },
+  { x: 566, y: 110 },
+  { x: 608, y: 158 },
+  { x: 632, y: 216 },
+  { x: 638, y: 278 },
+];
+
 /* ── Peg layouts ─────────────────────────────────────────── */
 
 function buildClassicPegs() {
@@ -161,6 +181,169 @@ const DUSK_PEGS = [
   { x: 104, y: 454, r: 9, kind: "metal", hue: "cyan", phase: 0.6, id: "d-edge-0" },
   { x: 104, y: 530, r: 8, kind: "metal", hue: "magenta", phase: 2.4, id: "d-edge-1" },
 ]);
+
+/** Sparse velvet-and-gold pin field framing the central wheel. */
+const ABYSS_PEGS = [
+  // The centre of the upper field is deliberately open: a clean drop can
+  // reach the wheel, while side drops still have pins and bumpers to miss it.
+  [348, [123, 228, 438, 543], 7.2],
+  // Lower rail breakers. The two high rail guards are larger elastic bumpers
+  // in ABYSS_OBSTACLES so a marble can never wedge between a small pin and
+  // the wall.
+  [694, [108, 558], 8.2, "metal"],
+  [766, [243, 423], 6.4],
+  [820, [108, 558], 8.2, "metal"],
+]
+  .flatMap(([y, xs, r, kind], row) =>
+    xs.map((x, col) => ({
+      x,
+      y,
+      r,
+      kind: kind || "splitter",
+      hue: ["yellow", "magenta", "mint"][(row + col) % 3],
+      phase: row * 1.4 + col * 0.7,
+      id: `a-${row}-${col}`,
+    })),
+  );
+
+/**
+ * The abyss wheel uses twelve physical sectors. Outcomes are drawn by picking
+ * a sector at random, so the sector mix below is also the exact probability
+ * table: 4× raise multiplier, 3× cut multiplier, 3× add a bonus marble and
+ * 2× devour the current marble. A winning sector pays +1 ticket; a losing
+ * sector costs -1.
+ */
+const ABYSS_WHEEL_SECTORS = [
+  { kind: "boost", label: "×+1", ticket: 1 },
+  { kind: "lose", label: "×-1", ticket: -1 },
+  { kind: "add", label: "+1球", ticket: 1 },
+  { kind: "boost", label: "×+1", ticket: 1 },
+  { kind: "destroy", label: "吞噬", ticket: -1 },
+  { kind: "add", label: "+1球", ticket: 1 },
+  { kind: "boost", label: "×+1", ticket: 1 },
+  { kind: "lose", label: "×-1", ticket: -1 },
+  { kind: "add", label: "+1球", ticket: 1 },
+  { kind: "boost", label: "×+1", ticket: 1 },
+  { kind: "lose", label: "×-1", ticket: -1 },
+  { kind: "destroy", label: "吞噬", ticket: -1 },
+];
+
+const ABYSS_OBSTACLES = [
+  {
+    type: "wheel",
+    id: "abyss-wheel",
+    x: 333,
+    y: 600,
+    r: 108,
+    sectors: ABYSS_WHEEL_SECTORS,
+  },
+  {
+    type: "rotor",
+    x: 161,
+    y: 616,
+    length: 78,
+    thickness: 6,
+    arms: 2,
+    mode: "active",
+    speed: 1.7,
+    initialAngle: 0.35,
+    accent: "#f6c453",
+    restitution: 0.68,
+  },
+  {
+    type: "rotor",
+    x: 505,
+    y: 616,
+    length: 78,
+    thickness: 6,
+    arms: 2,
+    mode: "active",
+    speed: -1.9,
+    initialAngle: 1.15,
+    accent: "#ff3b5c",
+    restitution: 0.68,
+  },
+  {
+    type: "bumper",
+    x: 167,
+    y: 394,
+    r: 23,
+    boost: 440,
+    restitution: 0.94,
+    accent: "#f6c453",
+    label: "7",
+  },
+  {
+    type: "bumper",
+    x: 108,
+    y: 470,
+    r: 12,
+    boost: 0,
+    restitution: 0.96,
+    accent: "#45f0c8",
+    label: "♣",
+  },
+  {
+    type: "bumper",
+    x: 499,
+    y: 394,
+    r: 23,
+    boost: 440,
+    restitution: 0.94,
+    accent: "#ff3b5c",
+    label: "7",
+  },
+  {
+    type: "bumper",
+    x: 558,
+    y: 470,
+    r: 12,
+    boost: 0,
+    restitution: 0.96,
+    accent: "#ff3b5c",
+    label: "♥",
+  },
+  {
+    type: "portal",
+    a: { x: 161, y: 760 },
+    b: { x: 505, y: 760 },
+    r: 26,
+    accentA: "#f6c453",
+    accentB: "#ff3b5c",
+    labelA: "大",
+    labelB: "小",
+  },
+  {
+    type: "bumper",
+    x: 195,
+    y: 842,
+    r: 25,
+    boost: 470,
+    restitution: 0.95,
+    accent: "#ff3b5c",
+    label: "♠",
+  },
+  {
+    type: "bumper",
+    x: 333,
+    y: 790,
+    r: 24,
+    boost: 500,
+    restitution: 0.95,
+    accent: "#f6c453",
+    label: "777",
+  },
+  {
+    type: "bumper",
+    x: 471,
+    y: 842,
+    r: 25,
+    boost: 470,
+    restitution: 0.95,
+    accent: "#45f0c8",
+    label: "♦",
+  },
+];
 
 /* ── Obstacle recipes ────────────────────────────────────── */
 
@@ -481,6 +664,32 @@ const DEFINITIONS = [
       arch: { kind: "polyline", points: LAB_ARCH },
       pegs: LAB_PEGS,
       obstacles: LAB_OBSTACLES,
+      launchJitter: 30,
+    },
+  },
+  {
+    id: "abyss",
+    name: "狂赌深渊",
+    en: "ABYSS WAGER",
+    tagline: "红丝绒、黄金轮盘，以及一张永远赌不完的欠条。",
+    description:
+      "中央十二格深渊轮盘吞下落珠，转动命运指针：倍率上涨、倍率下跌、追加一球，或直接吞噬。每次开盘让彩票 +1 或 -1，结果揭晓后母球从轮心随机射出。",
+    price: 58,
+    currency: "tickets",
+    art: "cyberpunk",
+    variant: "abyss",
+    features: ["中央命运轮盘", "倍率赌局", "追加赌球", "弹性侧护栏", "深渊吞噬"],
+    palette: {
+      primary: "#ff3b5c",
+      secondary: "#f6c453",
+      tertiary: "#45f0c8",
+      background: "#15070d",
+      deep: "#050205",
+    },
+    layout: {
+      arch: { kind: "polyline", points: ABYSS_ARCH },
+      pegs: ABYSS_PEGS,
+      obstacles: ABYSS_OBSTACLES,
       launchJitter: 30,
     },
   },

@@ -1414,7 +1414,7 @@
 
 /* ── Cyberpunk table chrome ──────────────────────────────── */
 
-body:is([data-table="neon"], [data-table="warp"]) .page-glow {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .page-glow {
   background:
     radial-gradient(105% 58% at 50% -8%, rgba(var(--table-accent-rgb), 0.2) 0%, transparent 62%),
     radial-gradient(58% 44% at 8% 104%, rgba(var(--table-second-rgb), 0.16) 0%, transparent 72%),
@@ -1422,12 +1422,12 @@ body:is([data-table="neon"], [data-table="warp"]) .page-glow {
     linear-gradient(180deg, #05070f 0%, #070a14 54%, #03050b 100%);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .machine {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .machine {
   filter: drop-shadow(0 28px 55px rgba(0, 0, 0, 0.62))
     drop-shadow(0 0 34px rgba(var(--table-accent-rgb), 0.16));
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .brand-mark {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .brand-mark {
   border-color: rgba(var(--table-accent-rgb), 0.58);
   background:
     radial-gradient(circle at 50% 36%, rgba(var(--table-accent-rgb), 0.22), transparent 55%),
@@ -1437,17 +1437,17 @@ body:is([data-table="neon"], [data-table="warp"]) .brand-mark {
     inset 0 0 0 4px rgba(var(--table-accent-rgb), 0.18);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .brand-mark::before,
-body:is([data-table="neon"], [data-table="warp"]) .brand-mark::after {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .brand-mark::before,
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .brand-mark::after {
   border-color: rgba(var(--table-accent-rgb), 0.3);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .brand-mark i {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .brand-mark i {
   background: var(--table-second);
   box-shadow: 0 0 10px rgba(var(--table-second-rgb), 0.9);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .round-badge {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .round-badge {
   border-color: rgba(var(--table-accent-rgb), 0.35);
   background: rgba(5, 13, 26, 0.82);
   color: rgba(210, 249, 255, 0.82);
@@ -1456,23 +1456,23 @@ body:is([data-table="neon"], [data-table="warp"]) .round-badge {
     0 0 18px rgba(var(--table-accent-rgb), 0.08);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .round-badge.is-live {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .round-badge.is-live {
   color: #e6feff;
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .round-badge.is-live .round-dot {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .round-badge.is-live .round-dot {
   background: var(--table-second);
   box-shadow:
     0 0 0 2px rgba(var(--table-second-rgb), 0.18),
     0 0 10px rgba(var(--table-second-rgb), 0.8);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .round-badge.is-ready .round-dot {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .round-badge.is-ready .round-dot {
   background: var(--table-accent);
   box-shadow: 0 0 8px rgba(var(--table-accent-rgb), 0.7);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .hint-bubble {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .hint-bubble {
   border-color: rgba(var(--table-accent-rgb), 0.34);
   background: rgba(4, 11, 23, 0.92);
   color: rgba(224, 249, 255, 0.92);
@@ -1481,12 +1481,12 @@ body:is([data-table="neon"], [data-table="warp"]) .hint-bubble {
     0 0 20px rgba(var(--table-accent-rgb), 0.08);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .hint-arrow {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .hint-arrow {
   background: rgba(var(--table-accent-rgb), 0.15);
   color: var(--table-accent);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .multiplier-banner {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .multiplier-banner {
   border-color: rgba(var(--table-accent-rgb), 0.4);
   background:
     radial-gradient(circle at 50% 0%, rgba(var(--table-second-rgb), 0.16), transparent 62%),
@@ -1498,30 +1498,30 @@ body:is([data-table="neon"], [data-table="warp"]) .multiplier-banner {
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .multiplier-banner::before {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .multiplier-banner::before {
   background: radial-gradient(ellipse, rgba(var(--table-accent-rgb), 0.65), transparent 70%);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .banner-kicker {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .banner-kicker {
   color: rgba(var(--table-accent-rgb), 0.72);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .multiplier-banner strong {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .multiplier-banner strong {
   color: #ffffff;
   text-shadow:
     0 0 14px rgba(var(--table-accent-rgb), 0.8),
     0 0 24px rgba(var(--table-second-rgb), 0.35);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .banner-sub {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .banner-sub {
   color: rgba(214, 245, 255, 0.6);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .banner-sub b {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .banner-sub b {
   color: var(--table-third);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .result-card {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .result-card {
   border-color: rgba(var(--table-accent-rgb), 0.38);
   background:
     radial-gradient(circle at 50% -30%, rgba(var(--table-accent-rgb), 0.16), transparent 58%),
@@ -1532,37 +1532,37 @@ body:is([data-table="neon"], [data-table="warp"]) .result-card {
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .result-card::before {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .result-card::before {
   border-color: rgba(var(--table-accent-rgb), 0.18);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .result-card.is-loss {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .result-card.is-loss {
   background:
     radial-gradient(circle at 50% -30%, rgba(120, 150, 180, 0.1), transparent 58%),
     rgba(5, 11, 22, 0.96);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .result-eyebrow {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .result-eyebrow {
   color: var(--table-accent);
   text-shadow: 0 0 12px rgba(var(--table-accent-rgb), 0.5);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .result-card h2 {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .result-card h2 {
   color: #f2feff;
   text-shadow: 0 0 18px rgba(var(--table-accent-rgb), 0.45);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .result-card.is-loss h2 {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .result-card.is-loss h2 {
   color: #c4d7e4;
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .result-ticket {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .result-ticket {
   border-color: rgba(var(--table-accent-rgb), 0.28);
   background: rgba(var(--table-accent-rgb), 0.1);
   color: #dcfbff;
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .dock {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .dock {
   border-color: rgba(var(--table-accent-rgb), 0.2);
   background:
     radial-gradient(80% 120% at 0% 0%, rgba(var(--table-accent-rgb), 0.07), transparent 60%),
@@ -1573,47 +1573,47 @@ body:is([data-table="neon"], [data-table="warp"]) .dock {
     0 0 26px rgba(var(--table-accent-rgb), 0.06);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .dock::before {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .dock::before {
   background: linear-gradient(90deg, transparent, rgba(var(--table-accent-rgb), 0.7), transparent);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .dock::after {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .dock::after {
   background: radial-gradient(circle, rgba(var(--table-second-rgb), 0.14), transparent 67%);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .dock-head,
-body:is([data-table="neon"], [data-table="warp"]) .dock-note {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .dock-head,
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .dock-note {
   color: rgba(204, 240, 255, 0.48);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .dock-note b {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .dock-note b {
   color: var(--table-accent);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .step-btn {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .step-btn {
   border-color: rgba(var(--table-accent-rgb), 0.24);
   background: rgba(var(--table-accent-rgb), 0.06);
   color: rgba(214, 248, 255, 0.75);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .step-btn:hover {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .step-btn:hover {
   border-color: rgba(var(--table-accent-rgb), 0.5);
   background: rgba(var(--table-accent-rgb), 0.12);
   color: #e8feff;
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .bet-display {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .bet-display {
   border-color: rgba(var(--table-accent-rgb), 0.32);
   background:
     linear-gradient(180deg, rgba(var(--table-accent-rgb), 0.1), rgba(0, 0, 0, 0.06)),
     rgba(0, 0, 0, 0.25);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .bet-display input {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .bet-display input {
   color: #e6feff;
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .start-btn {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .start-btn {
   border-color: rgba(var(--table-accent-rgb), 0.42);
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 42%),
@@ -1624,50 +1624,50 @@ body:is([data-table="neon"], [data-table="warp"]) .start-btn {
     inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .start-btn > small {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .start-btn > small {
   color: rgba(3, 16, 24, 0.72);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .quick-row > button[data-bet] {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .quick-row > button[data-bet] {
   background: rgba(var(--table-accent-rgb), 0.06);
   color: rgba(206, 242, 255, 0.58);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .quick-row > button[data-bet].is-active {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .quick-row > button[data-bet].is-active {
   border-color: rgba(var(--table-accent-rgb), 0.42);
   background: rgba(var(--table-accent-rgb), 0.16);
   color: #e8feff;
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .mini-light {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .mini-light {
   background: var(--table-accent);
   box-shadow: 0 0 8px rgba(var(--table-accent-rgb), 0.8);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .live-dot {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .live-dot {
   background: rgba(var(--table-accent-rgb), 0.6);
   box-shadow: 0 0 8px rgba(var(--table-accent-rgb), 0.5);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .live-dot.is-live {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .live-dot.is-live {
   background: var(--table-second);
   box-shadow: 0 0 10px rgba(var(--table-second-rgb), 0.7);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .play-meta b {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .play-meta b {
   color: #dcfbff;
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .pull-meter {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .pull-meter {
   border-color: rgba(var(--table-accent-rgb), 0.2);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .pull-fill {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .pull-fill {
   background: linear-gradient(90deg, rgba(var(--table-accent-rgb), 0.7), rgba(var(--table-second-rgb), 0.9));
   box-shadow: 0 0 12px rgba(var(--table-accent-rgb), 0.5);
 }
 
-body:is([data-table="neon"], [data-table="warp"]) .toast {
+body:is([data-table="neon"], [data-table="warp"], [data-table="abyss"]) .toast {
   border-color: rgba(var(--table-accent-rgb), 0.3);
   background: rgba(4, 11, 23, 0.94);
   color: #e6feff;
@@ -1815,4 +1815,263 @@ body:is([data-table="neon"], [data-table="warp"]) .toast {
   .skin-card.is-auditioning {
     animation: none;
   }
+}
+
+
+/* ── Abyss Wager table chrome ────────────────────────────── */
+
+body[data-table="abyss"] .page-glow {
+  background:
+    radial-gradient(105% 58% at 50% -8%, rgba(var(--table-second-rgb), 0.18) 0%, transparent 62%),
+    radial-gradient(58% 44% at 8% 104%, rgba(var(--table-accent-rgb), 0.18) 0%, transparent 72%),
+    radial-gradient(48% 38% at 98% 76%, rgba(var(--table-third-rgb), 0.08) 0%, transparent 75%),
+    linear-gradient(180deg, #080304 0%, #0d0408 54%, #040102 100%);
+}
+
+body[data-table="abyss"] .machine {
+  filter: drop-shadow(0 28px 55px rgba(0, 0, 0, 0.72))
+    drop-shadow(0 0 40px rgba(var(--table-second-rgb), 0.13))
+    drop-shadow(0 0 24px rgba(var(--table-accent-rgb), 0.12));
+}
+
+body[data-table="abyss"] .brand-mark {
+  border-color: rgba(var(--table-second-rgb), 0.58);
+  background:
+    radial-gradient(circle at 50% 36%, rgba(var(--table-second-rgb), 0.2), transparent 55%),
+    radial-gradient(circle at 50% 110%, rgba(var(--table-accent-rgb), 0.22), transparent 62%),
+    rgba(18, 4, 9, 0.92);
+  box-shadow:
+    inset 0 0 0 3px #070205,
+    inset 0 0 0 4px rgba(var(--table-second-rgb), 0.2);
+}
+
+body[data-table="abyss"] .brand-mark::before,
+body[data-table="abyss"] .brand-mark::after {
+  border-color: rgba(var(--table-second-rgb), 0.32);
+}
+
+body[data-table="abyss"] .brand-mark i {
+  background: var(--table-second);
+  box-shadow: 0 0 12px rgba(var(--table-second-rgb), 0.92);
+}
+
+body[data-table="abyss"] .round-badge,
+body[data-table="abyss"] .hint-bubble {
+  border-color: rgba(var(--table-second-rgb), 0.32);
+  background: rgba(18, 5, 9, 0.9);
+  color: rgba(255, 235, 216, 0.85);
+}
+
+body[data-table="abyss"] .round-badge.is-live .round-dot {
+  background: var(--table-accent);
+  box-shadow:
+    0 0 0 2px rgba(var(--table-accent-rgb), 0.18),
+    0 0 12px rgba(var(--table-accent-rgb), 0.85);
+}
+
+body[data-table="abyss"] .hint-arrow {
+  background: rgba(var(--table-second-rgb), 0.16);
+  color: var(--table-second);
+}
+
+body[data-table="abyss"] .multiplier-banner {
+  border-color: rgba(var(--table-second-rgb), 0.44);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(var(--table-accent-rgb), 0.18), transparent 62%),
+    linear-gradient(150deg, rgba(28, 8, 14, 0.98), rgba(8, 2, 5, 0.96));
+  color: #fff3e2;
+}
+
+body[data-table="abyss"] .banner-kicker,
+body[data-table="abyss"] .banner-sub {
+  color: rgba(246, 220, 180, 0.62);
+}
+
+body[data-table="abyss"] .multiplier-banner strong {
+  color: #ffffff;
+  text-shadow:
+    0 0 16px rgba(var(--table-second-rgb), 0.75),
+    0 0 26px rgba(var(--table-accent-rgb), 0.36);
+}
+
+body[data-table="abyss"] .banner-sub b {
+  color: var(--table-third);
+}
+
+body[data-table="abyss"] .result-card {
+  border-color: rgba(var(--table-second-rgb), 0.4);
+  background:
+    radial-gradient(circle at 50% -30%, rgba(var(--table-second-rgb), 0.18), transparent 58%),
+    radial-gradient(circle at 50% 120%, rgba(var(--table-accent-rgb), 0.1), transparent 65%),
+    rgba(14, 3, 7, 0.97);
+}
+
+body[data-table="abyss"] .result-card::before {
+  border-color: rgba(var(--table-second-rgb), 0.2);
+}
+
+body[data-table="abyss"] .result-card.is-destroyed {
+  border-color: rgba(var(--table-accent-rgb), 0.58);
+  background:
+    radial-gradient(circle at 50% -30%, rgba(var(--table-accent-rgb), 0.24), transparent 58%),
+    radial-gradient(circle at 50% 120%, rgba(80, 8, 40, 0.4), transparent 65%),
+    rgba(12, 2, 6, 0.98);
+}
+
+body[data-table="abyss"] .result-card.is-destroyed h2 {
+  color: #ff9aac;
+  text-shadow:
+    0 0 18px rgba(var(--table-accent-rgb), 0.55),
+    0 0 36px rgba(var(--table-accent-rgb), 0.25);
+}
+
+body[data-table="abyss"] .result-ticket {
+  border-color: rgba(var(--table-second-rgb), 0.3);
+  background: rgba(var(--table-second-rgb), 0.1);
+  color: #fff0c9;
+}
+
+body[data-table="abyss"] .dock {
+  border-color: rgba(var(--table-second-rgb), 0.24);
+  background:
+    radial-gradient(80% 120% at 0% 0%, rgba(var(--table-second-rgb), 0.08), transparent 60%),
+    radial-gradient(80% 120% at 100% 100%, rgba(var(--table-accent-rgb), 0.06), transparent 60%),
+    linear-gradient(155deg, rgba(28, 8, 13, 0.98), rgba(7, 2, 5, 0.99));
+}
+
+body[data-table="abyss"] .dock::before {
+  background: linear-gradient(90deg, transparent, rgba(var(--table-second-rgb), 0.72), transparent);
+}
+
+body[data-table="abyss"] .dock::after {
+  background: radial-gradient(circle, rgba(var(--table-accent-rgb), 0.16), transparent 67%);
+}
+
+body[data-table="abyss"] .dock-head,
+body[data-table="abyss"] .dock-note {
+  color: rgba(255, 226, 198, 0.5);
+}
+
+body[data-table="abyss"] .dock-note b,
+body[data-table="abyss"] .play-meta b {
+  color: var(--table-second);
+}
+
+body[data-table="abyss"] .step-btn {
+  border-color: rgba(var(--table-second-rgb), 0.26);
+  background: rgba(var(--table-second-rgb), 0.06);
+  color: rgba(255, 235, 211, 0.76);
+}
+
+body[data-table="abyss"] .step-btn:hover {
+  border-color: rgba(var(--table-second-rgb), 0.56);
+  background: rgba(var(--table-second-rgb), 0.13);
+  color: #fff7e3;
+}
+
+body[data-table="abyss"] .bet-display {
+  border-color: rgba(var(--table-second-rgb), 0.34);
+  background:
+    linear-gradient(180deg, rgba(var(--table-second-rgb), 0.1), rgba(0, 0, 0, 0.08)),
+    rgba(0, 0, 0, 0.26);
+}
+
+body[data-table="abyss"] .bet-display input {
+  color: #fff0d4;
+}
+
+body[data-table="abyss"] .start-btn {
+  border-color: rgba(var(--table-second-rgb), 0.5);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.18), transparent 42%),
+    linear-gradient(135deg, #ffd77e 0%, #f6c453 36%, #c82848 100%);
+  color: #26050d;
+  box-shadow:
+    0 7px 22px rgba(var(--table-accent-rgb), 0.23),
+    inset 0 1px 0 rgba(255, 255, 255, 0.42);
+}
+
+body[data-table="abyss"] .start-btn > small {
+  color: rgba(38, 5, 13, 0.7);
+}
+
+body[data-table="abyss"] .quick-row > button[data-bet] {
+  background: rgba(var(--table-second-rgb), 0.06);
+  color: rgba(255, 231, 204, 0.6);
+}
+
+body[data-table="abyss"] .quick-row > button[data-bet].is-active {
+  border-color: rgba(var(--table-second-rgb), 0.48);
+  background: rgba(var(--table-second-rgb), 0.17);
+  color: #fff6e4;
+}
+
+body[data-table="abyss"] .mini-light,
+body[data-table="abyss"] .live-dot {
+  background: var(--table-second);
+  box-shadow: 0 0 9px rgba(var(--table-second-rgb), 0.82);
+}
+
+body[data-table="abyss"] .live-dot.is-live {
+  background: var(--table-accent);
+  box-shadow: 0 0 12px rgba(var(--table-accent-rgb), 0.8);
+}
+
+body[data-table="abyss"] .pull-meter {
+  border-color: rgba(var(--table-second-rgb), 0.22);
+}
+
+body[data-table="abyss"] .pull-fill {
+  background: linear-gradient(90deg, rgba(var(--table-second-rgb), 0.75), rgba(var(--table-accent-rgb), 0.95));
+  box-shadow: 0 0 14px rgba(var(--table-second-rgb), 0.5);
+}
+
+body[data-table="abyss"] .toast {
+  border-color: rgba(var(--table-second-rgb), 0.3);
+  background: rgba(18, 5, 9, 0.95);
+  color: #fff2df;
+}
+
+.table-card.is-abyss {
+  border-color: rgba(var(--table-second-rgb), 0.28);
+  background:
+    radial-gradient(100% 130% at 0% 0%, rgba(var(--table-second-rgb), 0.12), transparent 60%),
+    radial-gradient(100% 130% at 100% 100%, rgba(var(--table-accent-rgb), 0.12), transparent 62%),
+    linear-gradient(140deg, rgba(30, 7, 14, 0.94), rgba(10, 3, 7, 0.96));
+}
+
+.table-card.is-abyss.is-equipped {
+  border-color: rgba(var(--table-second-rgb), 0.58);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 28px rgba(var(--table-second-rgb), 0.12);
+}
+
+.table-card.is-abyss .table-thumb {
+  border-color: rgba(var(--table-second-rgb), 0.34);
+  background: #0c0306;
+}
+
+.table-card.is-abyss .skin-name {
+  color: #fff2d8;
+  text-shadow: 0 0 14px rgba(var(--table-second-rgb), 0.38);
+}
+
+.table-card.is-abyss .skin-en {
+  color: rgba(var(--table-second-rgb), 0.78);
+}
+
+.table-card.is-abyss .table-desc {
+  color: rgba(255, 224, 194, 0.4);
+}
+
+.table-card.is-abyss .skin-chip {
+  border-color: rgba(var(--table-second-rgb), 0.18);
+  color: rgba(255, 233, 204, 0.62);
+}
+
+.table-card.is-abyss .skin-btn.is-buy {
+  border-color: rgba(var(--table-second-rgb), 0.48);
+  background: rgba(var(--table-second-rgb), 0.14);
+  color: #fff5df;
 }

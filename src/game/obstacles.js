@@ -6,6 +6,7 @@
      bumper – a pin that adds a relative elastic kick on impact
      portal – two linked gates, enter one and leave the other
      block  – static rounded boxes (buildings, crates, bumpers walls)
+     wheel  – a sensor-only roulette disc that swallows the marble
 
    Collision is resolved against the obstacle's *relative* surface
    velocity, so a moving car can shove the marble and a passive
@@ -112,6 +113,38 @@ function createPortal(spec, index) {
   };
 }
 
+/** The roulette wheel is a sensor, not a solid body: the first marble to
+    touch the disc is swallowed by the engine and the pointer is animated
+    here. `armed` prevents a single approach from firing on every substep. */
+function createWheel(spec, index) {
+  const sectors =
+    Array.isArray(spec.sectors) && spec.sectors.length >= 2
+      ? spec.sectors
+      : [
+          { kind: "boost", label: "×+1", ticket: 1 },
+          { kind: "lose", label: "×-1", ticket: -1 },
+        ];
+  return {
+    ...spec,
+    type: "wheel",
+    id: spec.id || `wheel-${index}`,
+    r: Math.max(54, Number(spec.r) || 120),
+    sectors,
+    pointerAngle: -Math.PI / 2,
+    spinning: false,
+    spinFrom: -Math.PI / 2,
+    spinTo: -Math.PI / 2,
+    spinStartedAt: 0,
+    spinDuration: Math.max(700, Number(spec.spinDuration) || 1900),
+    resultIndex: -1,
+    resultGlow: 0,
+    armed: true,
+    cooldown: 0,
+    flash: 0,
+    lastEventAt: 0,
+  };
+}
+
 /** Turn the table's serialisable recipes into mutable runtime objects. */
 export function buildObstacles(specs = []) {
   const obstacles = specs.map((spec, index) => {
@@ -122,6 +155,8 @@ export function buildObstacles(specs = []) {
         return createRotor(spec, index);
       case "portal":
         return createPortal(spec, index);
+      case "wheel":
+        return createWheel(spec, index);
       case "bumper":
         return {
           ...spec,
@@ -173,6 +208,16 @@ export function resetObstacles(obstacles = []) {
     } else if (obstacle.type === "portal") {
       obstacle.cooldown = 0;
       obstacle.enterArmed = true;
+    } else if (obstacle.type === "wheel") {
+      obstacle.pointerAngle = -Math.PI / 2;
+      obstacle.spinning = false;
+      obstacle.spinFrom = -Math.PI / 2;
+      obstacle.spinTo = -Math.PI / 2;
+      obstacle.spinStartedAt = 0;
+      obstacle.resultIndex = -1;
+      obstacle.resultGlow = 0;
+      obstacle.armed = true;
+      obstacle.cooldown = 0;
     }
   }
 }
@@ -262,6 +307,26 @@ export function updateObstacles(obstacles = [], dt) {
       obstacle.angle %= TAU;
     } else if (obstacle.type === "portal") {
       if (obstacle.cooldown > 0) obstacle.cooldown = Math.max(0, obstacle.cooldown - dt);
+    } else if (obstacle.type === "wheel") {
+      if (obstacle.cooldown > 0) {
+        obstacle.cooldown = Math.max(0, obstacle.cooldown - dt);
+      }
+      if (obstacle.spinning) {
+        const elapsed = performance.now() - obstacle.spinStartedAt;
+        const t = clamp(elapsed / obstacle.spinDuration, 0, 1);
+        // Fast launch, long settle: the needle visibly slows onto its sector.
+        const eased = 1 - Math.pow(1 - t, 4);
+        obstacle.pointerAngle =
+          obstacle.spinFrom + (obstacle.spinTo - obstacle.spinFrom) * eased;
+        if (t >= 1) {
+          obstacle.spinning = false;
+          obstacle.pointerAngle = obstacle.spinTo;
+          obstacle.flash = 1;
+          obstacle.resultGlow = 1;
+        }
+      } else {
+        obstacle.resultGlow = Math.max(0, obstacle.resultGlow - dt * 0.45);
+      }
     }
   }
 }
@@ -541,6 +606,35 @@ function collideBlock(ball, obstacle, events) {
   return true;
 }
 
+/**
+ * Sensor-only wheel trigger. Touching the disc does not bounce the marble:
+ * the engine will hide it and run the roulette. Re-arming happens only after
+ * the marble has fully left the disc, so a needle trajectory cannot re-fire
+ * the wheel in the same pass.
+ */
+function collideWheel(ball, obstacle, events) {
+  const distance = Math.hypot(ball.x - obstacle.x, ball.y - obstacle.y);
+  const reach = obstacle.r + ball.r;
+  if (distance > reach + 14) obstacle.armed = true;
+  if (distance > reach) return false;
+  if (!obstacle.armed || obstacle.spinning || obstacle.cooldown > 0) return false;
+  obstacle.armed = false;
+  obstacle.flash = 0.6;
+  pushEvent(
+    obstacle,
+    events,
+    {
+      kind: "wheel",
+      x: obstacle.x,
+      y: obstacle.y,
+      wheelId: obstacle.id,
+      accent: obstacle.accent,
+    },
+    true,
+  );
+  return false;
+}
+
 function collidePortal(ball, obstacle, events) {
   if (obstacle.cooldown > 0) return false;
   const a = obstacle.a;
@@ -585,10 +679,11 @@ function collidePortal(ball, obstacle, events) {
  * Run one collision pass against every obstacle. Returns lightweight
  * events for the engine to translate into sound, sparks and screen shake.
  */
-export function collideObstacles(ball, obstacles = []) {
+export function collideObstacles(ball, obstacles = [], options = {}) {
   const events = [];
   for (const obstacle of obstacles) {
     if (obstacle.mainFieldOnly && ball.x > MAIN_RIGHT - 2) continue;
+    if (options.ignoreWheel && obstacle.type === "wheel") continue;
     switch (obstacle.type) {
       case "mover":
         collideMover(ball, obstacle, events);
@@ -604,6 +699,9 @@ export function collideObstacles(ball, obstacles = []) {
         break;
       case "block":
         collideBlock(ball, obstacle, events);
+        break;
+      case "wheel":
+        collideWheel(ball, obstacle, events);
         break;
       default:
         break;
@@ -1033,6 +1131,299 @@ function drawRotor(ctx, obstacle, now) {
   ctx.restore();
 }
 
+function wheelSectorColor(kind) {
+  if (kind === "boost") return "#f6c453";
+  if (kind === "lose") return "#ff3b5c";
+  if (kind === "add") return "#45f0c8";
+  if (kind === "destroy") return "#c46bff";
+  return "#f6c453";
+}
+
+function wheelSectorFill(kind, index) {
+  if (kind === "boost") return index % 2 ? "rgba(94, 58, 12, 0.72)" : "rgba(68, 38, 7, 0.82)";
+  if (kind === "lose") return index % 2 ? "rgba(73, 10, 23, 0.86)" : "rgba(44, 4, 14, 0.9)";
+  if (kind === "add") return index % 2 ? "rgba(10, 58, 50, 0.74)" : "rgba(5, 35, 31, 0.84)";
+  if (kind === "destroy") return index % 2 ? "rgba(36, 8, 50, 0.92)" : "rgba(18, 2, 28, 0.96)";
+  return "rgba(30, 8, 20, 0.9)";
+}
+
+/** Large velvet-and-gold roulette wheel occupying the middle of the table. */
+function drawWheel(ctx, obstacle, now, palette) {
+  const r = obstacle.r;
+  const sectors = Array.isArray(obstacle.sectors) ? obstacle.sectors : [];
+  const count = Math.max(2, sectors.length);
+  const step = TAU / count;
+  const spinning = Boolean(obstacle.spinning);
+  const resultGlow = clamp(obstacle.resultGlow || 0, 0, 1);
+  const selected = Number.isInteger(obstacle.resultIndex) ? obstacle.resultIndex : -1;
+  const pulse = 0.65 + Math.sin(now * 0.005) * 0.2;
+  const primaryRgb = palette.primaryRgb || hexToRgb(palette.primary || "#ff3b5c");
+  const secondRgb = palette.secondRgb || palette.secondaryRgb || hexToRgb(palette.secondary || "#f6c453");
+
+  ctx.save();
+  ctx.translate(obstacle.x, obstacle.y);
+
+  // Soft abyss halo under the wheel.
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  const halo = ctx.createRadialGradient(0, 0, r * 0.4, 0, 0, r * 1.5);
+  halo.addColorStop(0, `rgba(${secondRgb}, ${0.1 + resultGlow * 0.12})`);
+  halo.addColorStop(0.62, `rgba(${primaryRgb}, 0.05)`);
+  halo.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.fillStyle = halo;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 1.5, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+
+  // Drop shadow.
+  ctx.fillStyle = "rgba(0, 0, 0, 0.52)";
+  ctx.beginPath();
+  ctx.ellipse(4, 13, r * 1.04, r * 0.94, 0, 0, TAU);
+  ctx.fill();
+
+  // Outer rim.
+  const rim = ctx.createLinearGradient(-r, -r, r, r);
+  rim.addColorStop(0, "#f9df9a");
+  rim.addColorStop(0.26, "#8b5f1f");
+  rim.addColorStop(0.52, "#f6c453");
+  rim.addColorStop(0.75, "#51330c");
+  rim.addColorStop(1, "#f4d58b");
+  ctx.fillStyle = rim;
+  ctx.beginPath();
+  ctx.arc(0, 0, r + 11, 0, TAU);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255, 244, 194, 0.8)";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.arc(0, 0, r + 11, 0, TAU);
+  ctx.stroke();
+
+  // Rim screws / lamps.
+  const lampCount = 28;
+  for (let i = 0; i < lampCount; i += 1) {
+    const angle = -Math.PI / 2 + (i / lampCount) * TAU;
+    const lx = Math.cos(angle) * (r + 3);
+    const ly = Math.sin(angle) * (r + 3);
+    const hot = (i + Math.floor(now * 0.004)) % 7 === 0;
+    ctx.fillStyle = hot
+      ? "rgba(255, 249, 218, 0.96)"
+      : `rgba(${secondRgb}, ${0.34 + pulse * 0.22})`;
+    ctx.beginPath();
+    ctx.arc(lx, ly, hot ? 2.8 : 2, 0, TAU);
+    ctx.fill();
+  }
+
+  // Recessed felt disc.
+  ctx.fillStyle = "#18040b";
+  ctx.beginPath();
+  ctx.arc(0, 0, r - 2, 0, TAU);
+  ctx.fill();
+
+  // Wheel sectors.
+  for (let i = 0; i < count; i += 1) {
+    const sector = sectors[i] || {};
+    const mid = -Math.PI / 2 + i * step;
+    const start = mid - step / 2;
+    const end = mid + step / 2;
+    const kind = sector.kind || "boost";
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, r - 12, start, end);
+    ctx.closePath();
+    ctx.fillStyle = wheelSectorFill(kind, i);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(246, 196, 83, 0.38)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    if (i === selected) {
+      ctx.fillStyle = `rgba(${hexToRgb(wheelSectorColor(kind))}, ${0.08 + resultGlow * 0.2})`;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.arc(0, 0, r - 12, start, end);
+      ctx.closePath();
+      ctx.fill();
+      if (resultGlow > 0.02) {
+        ctx.strokeStyle = `rgba(255, 250, 220, ${resultGlow * 0.8})`;
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.arc(0, 0, r - 13, start + 0.03, end - 0.03);
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Felt grain and vignette.
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(0, 0, r - 12, 0, TAU);
+  ctx.clip();
+  const shade = ctx.createRadialGradient(-r * 0.2, -r * 0.28, 8, 0, 0, r);
+  shade.addColorStop(0, "rgba(255,255,255,0.065)");
+  shade.addColorStop(0.6, "rgba(0,0,0,0)");
+  shade.addColorStop(1, "rgba(0,0,0,0.5)");
+  ctx.fillStyle = shade;
+  ctx.fillRect(-r, -r, r * 2, r * 2);
+  ctx.strokeStyle = "rgba(255, 220, 160, 0.035)";
+  ctx.lineWidth = 1;
+  for (let y = -r; y < r; y += 5) {
+    ctx.beginPath();
+    ctx.moveTo(-r, y);
+    ctx.lineTo(r, y + 3);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // Sector labels.
+  for (let i = 0; i < count; i += 1) {
+    const sector = sectors[i] || {};
+    const mid = -Math.PI / 2 + i * step;
+    const color = wheelSectorColor(sector.kind);
+    const lx = Math.cos(mid) * (r * 0.67);
+    const ly = Math.sin(mid) * (r * 0.67);
+    ctx.save();
+    ctx.translate(lx, ly);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 8 + (i === selected ? resultGlow * 10 : 0);
+    ctx.fillStyle = color;
+    ctx.font = '800 11px "PingFang SC", "Avenir Next", sans-serif';
+    ctx.fillText(sector.label || "", 0, -5);
+    ctx.shadowBlur = 0;
+    const ticket = Number(sector.ticket) || 0;
+    ctx.fillStyle = ticket >= 0 ? "rgba(255, 240, 190, 0.72)" : "rgba(255, 148, 160, 0.82)";
+    ctx.font = '700 7px "SFMono-Regular", monospace';
+    ctx.fillText(`票${ticket > 0 ? "+" : ""}${ticket}`, 0, 8);
+    ctx.restore();
+  }
+
+  // Gold index ring between labels and hub.
+  ctx.strokeStyle = "rgba(246, 196, 83, 0.5)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.4, 0, TAU);
+  ctx.stroke();
+  ctx.setLineDash([2, 6]);
+  ctx.strokeStyle = "rgba(255, 244, 206, 0.2)";
+  ctx.beginPath();
+  ctx.arc(0, 0, r * 0.43, 0, TAU);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Needle trail while spinning.
+  if (spinning) {
+    for (let trail = 3; trail >= 1; trail -= 1) {
+      ctx.save();
+      ctx.rotate(obstacle.pointerAngle - trail * 0.055);
+      ctx.strokeStyle = `rgba(255, 228, 150, ${0.05 + trail * 0.025})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(r - 20, 0);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  // The needle itself.
+  ctx.save();
+  ctx.rotate(obstacle.pointerAngle);
+  const tip = r - 15;
+  ctx.shadowColor = "#ffcf67";
+  ctx.shadowBlur = 14;
+  ctx.strokeStyle = "#4b2608";
+  ctx.lineWidth = 7;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(-14, 0);
+  ctx.lineTo(tip - 11, 0);
+  ctx.stroke();
+  ctx.strokeStyle = "#f6c453";
+  ctx.lineWidth = 4;
+  ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.strokeStyle = "rgba(255, 250, 224, 0.92)";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(-10, -1);
+  ctx.lineTo(tip - 13, -1);
+  ctx.stroke();
+  ctx.fillStyle = "#f6c453";
+  ctx.beginPath();
+  ctx.moveTo(tip, 0);
+  ctx.lineTo(tip - 17, -8);
+  ctx.lineTo(tip - 13, 0);
+  ctx.lineTo(tip - 17, 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "#fff4c8";
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
+  ctx.restore();
+
+  // Central abyss eye.
+  const hubOuter = 34;
+  ctx.save();
+  ctx.shadowColor = "#f6c453";
+  ctx.shadowBlur = 15;
+  const hubRim = ctx.createRadialGradient(-8, -10, 1, 0, 0, hubOuter);
+  hubRim.addColorStop(0, "#fff2b8");
+  hubRim.addColorStop(0.5, "#b07a24");
+  hubRim.addColorStop(0.78, "#3a2108");
+  hubRim.addColorStop(1, "#f6c453");
+  ctx.fillStyle = hubRim;
+  ctx.beginPath();
+  ctx.arc(0, 0, hubOuter, 0, TAU);
+  ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = "#070206";
+  ctx.beginPath();
+  ctx.arc(0, 0, 27, 0, TAU);
+  ctx.fill();
+  const iris = ctx.createRadialGradient(-3, -4, 1, 0, 0, 20);
+  iris.addColorStop(0, "#ff8a8f");
+  iris.addColorStop(0.3, "#ff3b5c");
+  iris.addColorStop(0.7, "#8c0d25");
+  iris.addColorStop(1, "#21020a");
+  ctx.fillStyle = iris;
+  ctx.beginPath();
+  ctx.arc(0, 0, 19, 0, TAU);
+  ctx.fill();
+  ctx.fillStyle = "#080204";
+  ctx.beginPath();
+  ctx.arc(0, 0, 8, 0, TAU);
+  ctx.fill();
+  ctx.fillStyle = "rgba(255, 255, 255, 0.9)";
+  ctx.beginPath();
+  ctx.arc(-7, -8, 3.2, 0, TAU);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255, 232, 178, 0.75)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(0, 0, 27, 0, TAU);
+  ctx.stroke();
+  ctx.restore();
+
+  // Tiny plaque below the wheel.
+  ctx.fillStyle = `rgba(${secondRgb}, ${0.5 + pulse * 0.18})`;
+  ctx.font = '800 7px "SFMono-Regular", monospace';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("A B Y S S   W H E E L", 0, r + 22);
+
+  if (obstacle.flash > 0.02) {
+    ctx.strokeStyle = `rgba(255, 247, 216, ${obstacle.flash * 0.72})`;
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.arc(0, 0, r + 14 + (1 - obstacle.flash) * 18, 0, TAU);
+    ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
 function drawBumper(ctx, obstacle, now, palette) {
   const accent = obstacle.accent || palette.primary;
 
@@ -1222,7 +1613,8 @@ export function drawObstacles(ctx, obstacles = [], now, palette = {}, options = 
   }
 
   for (const obstacle of obstacles) {
-    if (obstacle.type === "block") {
+    if (obstacle.type === "wheel") drawWheel(ctx, obstacle, now, colors);
+    else if (obstacle.type === "block") {
       if (obstacle.style === "billboard") drawBillboard(ctx, obstacle, now, colors);
       else drawTower(ctx, obstacle, now, colors);
     }
