@@ -1,0 +1,9 @@
+{
+  "name": "marble-drop",
+  "version": "1.0.0",
+  "private": true,
+  "description": "竖屏物理弹珠台小游戏 · Marble Drop",
+  "scripts": {
+    "start": "python3 -m http.server 4173 --bind 127.0.0.1"
+  }
+}

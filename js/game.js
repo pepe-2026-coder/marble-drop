@@ -1,0 +1,3960 @@
+/* ============================================================
+   弹珠台 · MARBLE DROP
+   纯 Canvas + 自研 2D 物理的小型竖屏弹珠台
+   ============================================================ */
+
+const W = 720;
+const H = 1240;
+const TAU = Math.PI * 2;
+
+const INNER = {
+  left: 82,
+  right: 638,
+  bottom: 1180,
+  cx: 360,
+  cy: 330,
+  rx: 278,
+  ry: 285,
+};
+
+const MAIN_RIGHT = 584;
+const PEGS = {
+  r: 6.2,
+  startY: 362,
+  gapY: 50,
+  gapX: 51,
+  rows: 10,
+  evenCount: 10,
+  oddCount: 9,
+  firstX: 103.5,
+  halfOffsetX: 25.5,
+};
+
+const SLOT = {
+  x0: 84,
+  x1: MAIN_RIGHT,
+  count: 12,
+  top: 900,
+  floor: 1000,
+  sensorY: 948,
+};
+SLOT.width = (SLOT.x1 - SLOT.x0) / SLOT.count;
+
+const LANE = {
+  left: MAIN_RIGHT,
+  right: INNER.right,
+  dividerTop: 278,
+  dividerBottom: 1038,
+};
+const STAGE = { x: 610, y: 1080 };
+const GATE = { x0: 582, x1: 640, y: 1092 };
+const CUP = { x: 610, y: 1122 };
+const SPRING = { x: 610, baseHandleY: 1188, radius: 22 };
+const RAMP = { x0: 96, y0: 1048, x1: 594, y1: 1074 };
+
+const BALL_R = 10;
+const GRAVITY = 1450;
+const PHYS_STEP = 1 / 240;
+
+const MULTIPLIERS = [
+  { value: 2, weight: 35, slots: 4 },
+  { value: 4, weight: 26, slots: 3 },
+  { value: 6, weight: 20, slots: 2 },
+  { value: 8, weight: 12, slots: 1 },
+  { value: 10, weight: 7, slots: 1 },
+];
+
+const STORAGE_KEY = "marble-drop-save-v1";
+const INITIAL_MARBLES = 100;
+
+/* ── Utils ───────────────────────────────────────────────── */
+
+const clamp = (v, min, max) => Math.min(max, Math.max(min, v));
+const lerp = (a, b, t) => a + (b - a) * t;
+const randomRange = (min, max) => min + Math.random() * (max - min);
+const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+const easeInCubic = (t) => t * t * t;
+const easeInOutCubic = (t) =>
+  t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function () {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+const decoRandom = mulberry32(0x4d415242);
+const speckles = Array.from({ length: 260 }, () => ({
+  x: 88 + decoRandom() * 544,
+  y: 44 + decoRandom() * 1120,
+  r: 0.35 + decoRandom() * 0.8,
+  a: 0.018 + decoRandom() * 0.045,
+}));
+
+/* ── DOM ─────────────────────────────────────────────────── */
+
+const canvas = document.getElementById("board");
+let ctx = canvas.getContext("2d", { alpha: true });
+const mainCtx = ctx;
+let canvasScale = 1;
+let staticLayer = null;
+const machine = document.getElementById("machine");
+const stageEl = document.getElementById("stage");
+
+const marbleCountEl = document.getElementById("marbleCount");
+const ticketCountEl = document.getElementById("ticketCount");
+const ticketStat = document.getElementById("ticketStat");
+const dockBalanceEl = document.getElementById("dockBalance");
+const soundBtn = document.getElementById("soundBtn");
+const helpBtn = document.getElementById("helpBtn");
+const helpDialog = document.getElementById("helpDialog");
+const helpClose = document.getElementById("helpClose");
+const helpDone = document.getElementById("helpDone");
+const resetBtn = document.getElementById("resetBtn");
+
+const roundBadge = document.getElementById("roundBadge");
+const roundText = document.getElementById("roundText");
+const levelBadge = document.getElementById("levelBadge");
+const levelNumber = document.getElementById("levelNumber");
+const levelXpFill = document.getElementById("levelXpFill");
+const levelSpBadge = document.getElementById("levelSpBadge");
+const multiplierBanner = document.getElementById("multiplierBanner");
+const bannerMult = document.getElementById("bannerMult");
+const bannerSlots = document.getElementById("bannerSlots");
+const hintBubble = document.getElementById("hintBubble");
+const hintText = document.getElementById("hintText");
+const resultCard = document.getElementById("resultCard");
+const resultEyebrow = document.getElementById("resultEyebrow");
+const resultTitle = document.getElementById("resultTitle");
+const resultPayout = document.getElementById("resultPayout");
+const resultTicket = document.getElementById("resultTicket");
+const resultProgress = document.getElementById("resultProgress");
+const resultFoot = document.getElementById("resultFoot");
+const toastEl = document.getElementById("toast");
+
+const dockIdle = document.getElementById("dockIdle");
+const dockPlay = document.getElementById("dockPlay");
+const betInput = document.getElementById("betInput");
+const betMinus = document.getElementById("betMinus");
+const betPlus = document.getElementById("betPlus");
+const startBtn = document.getElementById("startBtn");
+const startLabel = document.getElementById("startLabel");
+const startBetText = document.getElementById("startBetText");
+const quickRow = document.getElementById("quickRow");
+const refillBtn = document.getElementById("refillBtn");
+const playStatus = document.getElementById("playStatus");
+const liveDot = document.getElementById("liveDot");
+const playBet = document.getElementById("playBet");
+const playMult = document.getElementById("playMult");
+const playSlots = document.getElementById("playSlots");
+const playLane = document.getElementById("playLane");
+const pullMeter = document.getElementById("pullMeter");
+const pullZone = document.getElementById("pullZone");
+const pullPercent = document.getElementById("pullPercent");
+const pullFill = document.getElementById("pullFill");
+const toolTray = document.getElementById("toolTray");
+const magnetToolBtn = document.getElementById("magnetToolBtn");
+const magnetToolCount = document.getElementById("magnetToolCount");
+const padToolBtn = document.getElementById("padToolBtn");
+const padToolCount = document.getElementById("padToolCount");
+const toolSkipBtn = document.getElementById("toolSkipBtn");
+
+const workshopDialog = document.getElementById("workshopDialog");
+const workshopClose = document.getElementById("workshopClose");
+const wsLevel = document.getElementById("wsLevel");
+const wsXpText = document.getElementById("wsXpText");
+const wsXpFill = document.getElementById("wsXpFill");
+const wsSkillPoints = document.getElementById("wsSkillPoints");
+const wsTickets = document.getElementById("wsTickets");
+const wsTabs = document.getElementById("wsTabs");
+const wsSkillsPanel = document.getElementById("wsSkillsPanel");
+const wsShopPanel = document.getElementById("wsShopPanel");
+
+/* ── Audio ───────────────────────────────────────────────── */
+
+class SoundEngine {
+  constructor() {
+    this.ctx = null;
+    this.master = null;
+    this.noiseBuffer = null;
+    this.lastPegAt = 0;
+    this.lastWallAt = 0;
+  }
+
+  init() {
+    if (this.ctx) {
+      if (this.ctx.state === "suspended") this.ctx.resume().catch(() => {});
+      return;
+    }
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    this.ctx = new Ctx();
+    this.master = this.ctx.createGain();
+    this.master.gain.value = 0.32;
+    this.master.connect(this.ctx.destination);
+    this.noiseBuffer = this.createNoiseBuffer();
+  }
+
+  createNoiseBuffer() {
+    const length = Math.floor(this.ctx.sampleRate * 0.6);
+    const buffer = this.ctx.createBuffer(1, length, this.ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < length; i += 1) data[i] = Math.random() * 2 - 1;
+    return buffer;
+  }
+
+  tone(freq, duration, type = "sine", volume = 0.08, slideTo = null, delay = 0) {
+    if (!this.ctx || !game.soundOn) return;
+    const t = this.ctx.currentTime + delay;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(Math.max(30, freq), t);
+    if (slideTo) {
+      osc.frequency.exponentialRampToValueAtTime(Math.max(30, slideTo), t + duration);
+    }
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, volume), t + 0.008);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+    osc.connect(gain);
+    gain.connect(this.master);
+    osc.start(t);
+    osc.stop(t + duration + 0.03);
+  }
+
+  noise(duration = 0.15, volume = 0.05, cutoff = 1300, delay = 0) {
+    if (!this.ctx || !game.soundOn) return;
+    const t = this.ctx.currentTime + delay;
+    const source = this.ctx.createBufferSource();
+    source.buffer = this.noiseBuffer;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = cutoff;
+    filter.Q.value = 0.8;
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(volume, t + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + duration);
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.master);
+    source.start(t);
+    source.stop(t + duration + 0.03);
+  }
+
+  gate() {
+    this.noise(0.09, 0.028, 1900);
+    this.tone(240, 0.08, "triangle", 0.035, 160);
+  }
+
+  light(index) {
+    const scale = [523.25, 587.33, 659.25, 783.99, 880];
+    this.tone(scale[index % scale.length], 0.13, "sine", 0.055, scale[index % scale.length] * 1.01);
+  }
+
+  peg(energy = 1) {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    if (now - this.lastPegAt < 0.024) return;
+    this.lastPegAt = now;
+    const vol = clamp(0.012 + energy * 0.022, 0.012, 0.042);
+    this.tone(randomRange(620, 1160), 0.055, "triangle", vol, randomRange(850, 1450));
+  }
+
+  wall(energy = 1) {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    if (now - this.lastWallAt < 0.045) return;
+    this.lastWallAt = now;
+    this.noise(0.05, clamp(0.008 + energy * 0.009, 0.008, 0.022), 480);
+  }
+
+  spring(strength = 0.7) {
+    this.noise(0.11, 0.025 + strength * 0.02, 750);
+    this.tone(105, 0.15, "sawtooth", 0.025, 60);
+  }
+
+  launch(power = 0.8) {
+    this.noise(0.18, 0.05, 1000);
+    this.tone(110 + power * 30, 0.28, "sine", 0.065, 360 + power * 190);
+  }
+
+  win(isJackpot = false) {
+    const notes = isJackpot
+      ? [523.25, 659.25, 783.99, 1046.5, 1318.5]
+      : [392, 523.25, 659.25, 783.99];
+    notes.forEach((freq, index) => {
+      this.tone(freq, 0.34, "sine", 0.075, freq * 1.005, index * 0.09);
+      this.tone(freq / 2, 0.3, "triangle", 0.025, null, index * 0.09);
+    });
+    if (isJackpot) this.tone(1567.98, 0.6, "sine", 0.05, 1567.98, 0.5);
+  }
+
+  lose() {
+    this.tone(180, 0.28, "sine", 0.035, 110);
+    this.noise(0.12, 0.018, 280);
+  }
+
+  ticket() {
+    [659.25, 783.99, 1046.5].forEach((freq, i) =>
+      this.tone(freq, 0.22, "triangle", 0.05, null, i * 0.075),
+    );
+  }
+
+  click() {
+    this.tone(420, 0.06, "triangle", 0.028, 300);
+  }
+}
+
+const audio = new SoundEngine();
+
+/* ── Progression data ────────────────────────────────────── */
+
+const XP_STEP = 40;
+function xpNeededForLevel(level) {
+  return 80 + (Math.max(1, level) - 1) * XP_STEP;
+}
+
+const BALL_SKINS = {
+  ruby: {
+    name: "红宝石",
+    inner: "#ff9372",
+    mid: "#f04a36",
+    deep: "#c6251b",
+    dark: "#80100d",
+    stroke: "rgba(103, 15, 11, 0.55)",
+    trail: "203, 42, 30",
+  },
+  gold: {
+    name: "鎏金",
+    inner: "#fff6c9",
+    mid: "#f6c95c",
+    deep: "#d3962c",
+    dark: "#76500f",
+    stroke: "rgba(97, 63, 12, 0.55)",
+    trail: "237, 183, 77",
+  },
+  jade: {
+    name: "青玉",
+    inner: "#d8ffec",
+    mid: "#7fd6a7",
+    deep: "#3fa87a",
+    dark: "#185641",
+    stroke: "rgba(18, 79, 57, 0.55)",
+    trail: "92, 190, 145",
+  },
+};
+
+const SKILL_BRANCHES = [
+  {
+    id: "magnet",
+    name: "磁力工程",
+    icon: "◎",
+    description: "让钉子形成引力场，把母球拉向你想要的方向。",
+  },
+  {
+    id: "pad",
+    name: "弹力工程",
+    icon: "◉",
+    description: "在机台上布置弹簧板，改变母球的落点。",
+  },
+];
+
+const SKILLS = {
+  magnetRadius: {
+    branch: "magnet",
+    name: "磁场半径",
+    max: 3,
+    cost: 1,
+    reqLevels: [1, 2, 4],
+    effect: (level) => `磁力范围 ${76 + level * 24}px`,
+    describe: "扩大磁力钉的引力半径。",
+  },
+  magnetStrength: {
+    branch: "magnet",
+    name: "磁场强度",
+    max: 2,
+    cost: 1,
+    reqLevels: [1, 3],
+    effect: (level) => `引力强度 ${(0.8 + level * 0.25).toFixed(2)}×`,
+    describe: "让磁力钉的牵引更有力。",
+  },
+  magnetCount: {
+    branch: "magnet",
+    name: "磁场扩容",
+    max: 1,
+    cost: 2,
+    reqLevels: [4],
+    effect: (level) => `每局磁力钉 +${level}`,
+    describe: "每局多布置一枚磁力钉。",
+  },
+  magnetDuration: {
+    branch: "magnet",
+    name: "磁场续航",
+    max: 2,
+    cost: 1,
+    reqLevels: [1, 3],
+    effect: (level) => `磁场持续 ${(2.4 + level * 0.9).toFixed(1)}s`,
+    describe: "延长磁力钉每次布阵的引力持续时间。",
+  },
+  padRadius: {
+    branch: "pad",
+    name: "弹板半径",
+    max: 3,
+    cost: 1,
+    reqLevels: [1, 2, 4],
+    effect: (level) => `弹力板半径 ${28 + level * 4}px`,
+    describe: "扩大弹力板的接触面积。",
+  },
+  padBounce: {
+    branch: "pad",
+    name: "反弹强度",
+    max: 2,
+    cost: 1,
+    reqLevels: [1, 3],
+    effect: (level) => `弹性 ${(0.95 + level * 0.05).toFixed(2)}×`,
+    describe: "提升弹力板的反弹系数。",
+  },
+  padCount: {
+    branch: "pad",
+    name: "弹板数量",
+    max: 1,
+    cost: 2,
+    reqLevels: [4],
+    effect: (level) => `每局弹力板 +${level}`,
+    describe: "每局多布置一块弹力板。",
+  },
+};
+
+const SHOP_ITEMS = [
+  {
+    id: "magnetCharge",
+    kind: "consumable",
+    key: "magnet",
+    name: "磁力钉 ×1",
+    desc: "本局额外增加一次磁力钉布阵，用掉才消耗。",
+    price: 3,
+    swatch: "is-magnet",
+    symbol: "◎",
+  },
+  {
+    id: "padCharge",
+    kind: "consumable",
+    key: "pad",
+    name: "弹力板 ×1",
+    desc: "本局额外增加一次弹力板布阵，用掉才消耗。",
+    price: 3,
+    swatch: "is-pad",
+    symbol: "◉",
+  },
+  {
+    id: "skinRuby",
+    kind: "skin",
+    skin: "ruby",
+    name: "红宝石母球",
+    desc: "经典红宝石外观，默认拥有。",
+    price: 0,
+    swatch: "is-ruby",
+    symbol: "●",
+  },
+  {
+    id: "skinGold",
+    kind: "skin",
+    skin: "gold",
+    name: "鎏金母球",
+    desc: "金色珠光外观，不改变物理属性。",
+    price: 12,
+    swatch: "is-gold",
+    symbol: "●",
+  },
+  {
+    id: "skinJade",
+    kind: "skin",
+    skin: "jade",
+    name: "青玉母球",
+    desc: "温润青玉外观，不改变物理属性。",
+    price: 12,
+    swatch: "is-jade",
+    symbol: "●",
+  },
+];
+
+function defaultProgress() {
+  return {
+    level: 1,
+    xp: 0,
+    skillPoints: 1,
+    skills: Object.fromEntries(Object.keys(SKILLS).map((id) => [id, 0])),
+    inventory: { magnet: 0, pad: 0 },
+    ownedSkins: ["ruby"],
+    equippedSkin: "ruby",
+  };
+}
+
+function normalizeProgress(raw) {
+  const base = defaultProgress();
+  if (!raw || typeof raw !== "object") return base;
+  const skills = {};
+  for (const [id, def] of Object.entries(SKILLS)) {
+    const value = Math.round(Number(raw.skills?.[id]) || 0);
+    skills[id] = clamp(value, 0, def.max);
+  }
+  const ownedSkins = Array.isArray(raw.ownedSkins)
+    ? raw.ownedSkins.filter((skin) => typeof skin === "string" && BALL_SKINS[skin])
+    : [];
+  if (!ownedSkins.includes("ruby")) ownedSkins.unshift("ruby");
+  const equipped = ownedSkins.includes(raw.equippedSkin) ? raw.equippedSkin : "ruby";
+  return {
+    level: clamp(Math.round(Number(raw.level) || 1), 1, 999),
+    xp: clamp(Math.round(Number(raw.xp) || 0), 0, 9_999_999),
+    skillPoints: clamp(Math.round(Number(raw.skillPoints) || 0), 0, 999),
+    skills,
+    inventory: {
+      magnet: clamp(Math.round(Number(raw.inventory?.magnet) || 0), 0, 999),
+      pad: clamp(Math.round(Number(raw.inventory?.pad) || 0), 0, 999),
+    },
+    ownedSkins,
+    equippedSkin: equipped,
+  };
+}
+
+function skillLevel(id) {
+  return game.progress.skills[id] || 0;
+}
+
+function getMagnetConfig() {
+  return {
+    radius: 76 + skillLevel("magnetRadius") * 24,
+    strength: 0.8 + skillLevel("magnetStrength") * 0.25,
+    duration: 2.4 + skillLevel("magnetDuration") * 0.9,
+    charges: 1 + skillLevel("magnetCount"),
+  };
+}
+
+function getPadConfig() {
+  return {
+    radius: 28 + skillLevel("padRadius") * 4,
+    restitution: 0.95 + skillLevel("padBounce") * 0.05,
+    charges: 1 + skillLevel("padCount"),
+  };
+}
+
+/* ── Persistence ─────────────────────────────────────────── */
+
+function loadSave() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    return {
+      marbles: clamp(Math.round(Number(parsed.marbles) || INITIAL_MARBLES), 0, 9_999_999),
+      tickets: clamp(Math.round(Number(parsed.tickets) || 0), 0, 9_999_999),
+      soundOn: parsed.soundOn !== false,
+      bet: clamp(Math.round(Number(parsed.bet) || 20), 5, 99),
+      progress: normalizeProgress(parsed.progress),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function saveGame() {
+  try {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({
+        marbles: game.marbles,
+        tickets: game.tickets,
+        soundOn: game.soundOn,
+        bet: game.bet,
+        progress: game.progress,
+      }),
+    );
+  } catch {
+    /* storage can be unavailable in private mode */
+  }
+}
+
+/* ── Game state ──────────────────────────────────────────── */
+
+const saved = loadSave();
+
+const game = {
+  phase: "idle", // idle | starting | ready | charging | flying | returning
+  marbles: saved?.marbles ?? INITIAL_MARBLES,
+  tickets: saved?.tickets ?? 0,
+  soundOn: saved?.soundOn ?? true,
+  bet: saved?.bet ?? 20,
+  progress: saved?.progress ?? defaultProgress(),
+  round: 0,
+  multiplier: 2,
+  slotCount: 4,
+  litSlots: new Set(),
+  litReveal: new Map(),
+  result: null,
+  gate: 0,
+  gateTarget: 0,
+  drop: null,
+  charge: 0,
+  charging: false,
+  chargeMode: null,
+  pointerId: null,
+  pointerStartY: 0,
+  pointerMaxPx: 120,
+  pointerMoved: false,
+  keyboardChargeStart: 0,
+  hapticStep: -1,
+  springRelease: null,
+  flashSlot: null,
+  flashAt: 0,
+  returnAnim: null,
+  returnPos: null,
+  shake: 0,
+  lastSlot: null,
+  leftLane: false,
+  flightStartedAt: 0,
+  landingResolved: false,
+  placingTool: null,
+  toolAvailable: { magnet: 0, pad: 0 },
+  toolBaseCharges: { magnet: 0, pad: 0 },
+  toolPlaced: { magnet: 0, pad: 0 },
+  toolScore: 0,
+  lastProgress: null,
+  bannerTimer: null,
+  hintTimer: null,
+  toastTimer: null,
+};
+
+const ball = {
+  x: STAGE.x,
+  y: STAGE.y,
+  prevX: STAGE.x,
+  prevY: STAGE.y,
+  vx: 0,
+  vy: 0,
+  r: BALL_R,
+  trail: [],
+  trailClock: 0,
+  spin: 0,
+  stallTime: 0,
+};
+
+/* ── World geometry ──────────────────────────────────────── */
+
+const segments = [];
+const pegs = [];
+const slotCaps = [];
+const particles = [];
+const activeMagnets = [];
+const activePads = [];
+
+function addSegment(x1, y1, x2, y2, restitution = 0.46, kind = "wall") {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  segments.push({
+    x1,
+    y1,
+    x2,
+    y2,
+    restitution,
+    kind,
+    nx: -dy,
+    ny: dx,
+    len: Math.hypot(dx, dy),
+  });
+}
+
+function buildWorld() {
+  segments.length = 0;
+  pegs.length = 0;
+  slotCaps.length = 0;
+
+  // Dome: sampled ellipse arc from right shoulder over the top to left shoulder.
+  const domeSegments = 110;
+  let prev = null;
+  for (let i = 0; i <= domeSegments; i += 1) {
+    const t = Math.PI - (i / domeSegments) * Math.PI;
+    const x = INNER.cx + INNER.rx * Math.cos(t);
+    const y = INNER.cy - INNER.ry * Math.sin(t);
+    if (prev) addSegment(prev.x, prev.y, x, y, 0.62, "dome");
+    prev = { x, y };
+  }
+
+  // Outer sides and launch lane.
+  addSegment(INNER.left, INNER.cy, INNER.left, SLOT.floor, 0.4, "wall");
+  addSegment(INNER.right, INNER.cy, INNER.right, 1168, 0.42, "wall");
+  addSegment(LANE.left, LANE.dividerTop, LANE.left, LANE.dividerBottom, 0.46, "divider");
+  addSegment(SLOT.x0, SLOT.floor, SLOT.x1, SLOT.floor, 0.32, "floor");
+
+  // Slot dividers with rounded caps.
+  for (let i = 1; i < SLOT.count; i += 1) {
+    const x = SLOT.x0 + i * SLOT.width;
+    addSegment(x, SLOT.top, x, SLOT.floor, 0.38, "slot-divider");
+    slotCaps.push({ x, y: SLOT.top, r: 2.4 });
+  }
+
+  // Symmetric triangular lattice. Every row is centred on the playfield, and
+  // the even/odd rows alternate 10/9 pins so the left and right edges have the
+  // same clearance. This replaces the old asymmetric funnel that left one side
+  // wide open and nearly sealed the other.
+  for (let row = 0; row < PEGS.rows; row += 1) {
+    const isOdd = row % 2 === 1;
+    const count = isOdd ? PEGS.oddCount : PEGS.evenCount;
+    const startX = PEGS.firstX + (isOdd ? PEGS.halfOffsetX : 0);
+    const y = PEGS.startY + row * PEGS.gapY;
+    for (let col = 0; col < count; col += 1) {
+      pegs.push({
+        x: startX + col * PEGS.gapX,
+        y,
+        r: PEGS.r,
+        glow: 0,
+        lastHit: 0,
+        id: `${row}-${col}`,
+      });
+    }
+  }
+}
+
+buildWorld();
+
+/* ── Physics ─────────────────────────────────────────────── */
+
+function collideSegment(b, seg) {
+  const abx = seg.x2 - seg.x1;
+  const aby = seg.y2 - seg.y1;
+  const len2 = abx * abx + aby * aby || 1;
+  let t = ((b.x - seg.x1) * abx + (b.y - seg.y1) * aby) / len2;
+  t = clamp(t, 0, 1);
+  const cx = seg.x1 + abx * t;
+  const cy = seg.y1 + aby * t;
+  let dx = b.x - cx;
+  let dy = b.y - cy;
+  let dist = Math.hypot(dx, dy);
+
+  if (dist >= b.r) return false;
+
+  if (dist < 0.0001) {
+    // Rare exact-centre case. Use the side the ball came from.
+    const side = (b.prevX - seg.x1) * -aby - (b.prevY - seg.y1) * abx;
+    const sign = side >= 0 ? 1 : -1;
+    dx = -aby * sign;
+    dy = abx * sign;
+    dist = Math.hypot(dx, dy) || 1;
+  }
+
+  const nx = dx / dist;
+  const ny = dy / dist;
+  const penetration = b.r - dist;
+  b.x += nx * penetration;
+  b.y += ny * penetration;
+
+  const vn = b.vx * nx + b.vy * ny;
+  if (vn < 0) {
+    const restitution = seg.restitution;
+    b.vx -= (1 + restitution) * vn * nx;
+    b.vy -= (1 + restitution) * vn * ny;
+
+    // A touch of tangential friction keeps the ball from skimming forever.
+    const tx = -ny;
+    const ty = nx;
+    const vt = b.vx * tx + b.vy * ty;
+    b.vx -= vt * 0.015 * tx;
+    b.vy -= vt * 0.015 * ty;
+
+    if (!b.silent && Math.abs(vn) > 180) {
+      audio.wall(Math.min(2, Math.abs(vn) / 800));
+      if (Math.abs(vn) > 330) game.shake = Math.min(1.4, game.shake + 0.12);
+    }
+  }
+  return true;
+}
+
+function collidePeg(b, peg) {
+  const dx = b.x - peg.x;
+  const dy = b.y - peg.y;
+  const minDist = b.r + peg.r;
+  const dist2 = dx * dx + dy * dy;
+  if (dist2 >= minDist * minDist) return false;
+
+  const dist = Math.sqrt(dist2) || 0.0001;
+  const nx = dx / dist;
+  const ny = dy / dist;
+  const penetration = minDist - dist;
+  b.x += nx * penetration;
+  b.y += ny * penetration;
+
+  const vn = b.vx * nx + b.vy * ny;
+  if (vn < 0) {
+    const restitution = 0.58;
+    b.vx -= (1 + restitution) * vn * nx;
+    b.vy -= (1 + restitution) * vn * ny;
+
+    // Imperfect pins: a tiny tangential scatter makes each run feel alive.
+    const tx = -ny;
+    const ty = nx;
+    const scatter = randomRange(-45, 45);
+    b.vx += tx * scatter;
+    b.vy += ty * scatter;
+
+    const tangent = b.vx * tx + b.vy * ty;
+    b.vx -= tangent * 0.028 * tx;
+    b.vy -= tangent * 0.028 * ty;
+
+    if (!b.silent) {
+      const energy = Math.min(2, Math.abs(vn) / 500);
+      peg.glow = Math.max(peg.glow, 0.55 + energy * 0.28);
+      const now = performance.now();
+      if (now - peg.lastHit > 28) {
+        peg.lastHit = now;
+        audio.peg(energy);
+        spawnPegSparks(peg.x, peg.y, energy);
+        game.shake = Math.min(1.2, game.shake + 0.035 * energy);
+      }
+    }
+  }
+  return true;
+}
+
+function collidePad(b, pad) {
+  const dx = b.x - pad.x;
+  const dy = b.y - pad.y;
+  const minDist = b.r + pad.radius;
+  const dist2 = dx * dx + dy * dy;
+  if (dist2 >= minDist * minDist) return false;
+
+  const dist = Math.sqrt(dist2) || 0.0001;
+  const nx = dx / dist;
+  const ny = dy / dist;
+  b.x += nx * (minDist - dist);
+  b.y += ny * (minDist - dist);
+
+  const vn = b.vx * nx + b.vy * ny;
+  if (vn < 0) {
+    b.vx -= (1 + pad.restitution) * vn * nx;
+    b.vy -= (1 + pad.restitution) * vn * ny;
+    const tx = -ny;
+    const ty = nx;
+    const vt = b.vx * tx + b.vy * ty;
+    b.vx -= vt * 0.025 * tx;
+    b.vy -= vt * 0.025 * ty;
+
+    if (!b.silent && game.phase === "flying") {
+      pad.hits += 1;
+      pad.glow = 1;
+      if (pad.hits <= 5) game.toolScore += 3;
+      const energy = Math.min(1.5, Math.abs(vn) / 700);
+      spawnToolBurst(pad.x, pad.y, "#e7b566");
+      if (Math.random() < 0.7) audio.peg(energy);
+      game.shake = Math.min(1.2, game.shake + 0.08);
+    }
+  }
+  return true;
+}
+
+function applyMagnetForces(b, dt) {
+  if (!activeMagnets.length || game.landingResolved) return;
+  for (const magnet of activeMagnets) {
+    if (magnet.energy <= 0) continue;
+    const dx = magnet.x - b.x;
+    const dy = magnet.y - b.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist >= magnet.radius || dist < b.r + 5) continue;
+    const falloff = 1 - dist / magnet.radius;
+    const acceleration = 920 * magnet.strength * falloff;
+    b.vx += (dx / dist) * acceleration * dt;
+    b.vy += (dy / dist) * acceleration * dt;
+    magnet.energy = Math.max(0, magnet.energy - dt);
+    magnet.pulse = 1;
+    if (!magnet.activated && !b.silent) {
+      magnet.activated = true;
+      game.toolScore += 4;
+      spawnToolBurst(magnet.x, magnet.y, "#8ed0be");
+      audio.tone(700, 0.09, "sine", 0.032, 940);
+    }
+  }
+}
+
+function stepBallPhysics(b, dt) {
+  b.prevX = b.x;
+  b.prevY = b.y;
+
+  b.vy += GRAVITY * dt;
+  b.vx *= 0.99965;
+  b.vy *= 0.99965;
+  applyMagnetForces(b, dt);
+  b.x += b.vx * dt;
+  b.y += b.vy * dt;
+
+  // Keep runaways bounded.
+  const speed = Math.hypot(b.vx, b.vy);
+  if (speed > 2600) {
+    const k = 2600 / speed;
+    b.vx *= k;
+    b.vy *= k;
+  }
+
+  for (let iter = 0; iter < 2; iter += 1) {
+    let touched = false;
+    for (let i = 0; i < slotCaps.length; i += 1) {
+      const cap = slotCaps[i];
+      if (collidePeg(b, cap)) touched = true;
+    }
+    for (let i = 0; i < segments.length; i += 1) {
+      if (collideSegment(b, segments[i])) touched = true;
+    }
+    for (let i = 0; i < pegs.length; i += 1) {
+      if (collidePeg(b, pegs[i])) touched = true;
+    }
+    for (let i = 0; i < activePads.length; i += 1) {
+      if (collidePad(b, activePads[i])) touched = true;
+    }
+    if (!touched) break;
+  }
+
+  b.spin += (b.vx / b.r) * dt;
+}
+
+function launchSpeed(power) {
+  // Linear force curve: every 1% of pull adds the same launch speed. The top
+  // of the range (2280) is tuned to carry the marble to the dome's high point.
+  return 1800 + clamp(power, 0, 1) * 480;
+}
+
+function getSlotIndex(x) {
+  return clamp(Math.floor((x - SLOT.x0) / SLOT.width), 0, SLOT.count - 1);
+}
+
+/* ── Particles ───────────────────────────────────────────── */
+
+function spawnPegSparks(x, y, energy = 1) {
+  const count = 1 + Math.floor(energy * 2);
+  for (let i = 0; i < count; i += 1) {
+    particles.push({
+      x,
+      y,
+      vx: randomRange(-75, 75),
+      vy: randomRange(-95, -15),
+      life: 0.24 + Math.random() * 0.2,
+      maxLife: 0.44,
+      size: randomRange(1.1, 2.4),
+      color: Math.random() > 0.4 ? "#e7b566" : "#fff1cb",
+      gravity: 380,
+      shape: "spark",
+    });
+  }
+}
+
+function spawnLaunchParticles() {
+  for (let i = 0; i < 12; i += 1) {
+    particles.push({
+      x: CUP.x + randomRange(-10, 10),
+      y: CUP.y + randomRange(2, 12),
+      vx: randomRange(-65, 65),
+      vy: randomRange(-180, -20),
+      life: 0.35 + Math.random() * 0.32,
+      maxLife: 0.67,
+      size: randomRange(1, 2.8),
+      color: Math.random() > 0.35 ? "#e7b566" : "#f8ebd0",
+      gravity: 260,
+      shape: "spark",
+    });
+  }
+}
+
+function spawnSlotBurst(x, y, win) {
+  const count = win ? 30 : 12;
+  for (let i = 0; i < count; i += 1) {
+    const angle = randomRange(Math.PI * 1.1, Math.PI * 1.9);
+    const speed = randomRange(80, win ? 360 : 160);
+    particles.push({
+      x,
+      y,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - randomRange(50, 180),
+      life: randomRange(0.45, 1.05),
+      maxLife: 1.05,
+      size: randomRange(1.4, 3.6),
+      color: win
+        ? ["#e7b566", "#f8dd9e", "#dd3b2c", "#fff4d8"][Math.floor(Math.random() * 4)]
+        : ["#9b8d78", "#b9a78d"][Math.floor(Math.random() * 2)],
+      gravity: 560,
+      shape: win && Math.random() > 0.55 ? "confetti" : "spark",
+      rot: randomRange(0, TAU),
+      vr: randomRange(-8, 8),
+    });
+  }
+}
+
+function spawnTicketBurst() {
+  for (let i = 0; i < 22; i += 1) {
+    particles.push({
+      x: randomRange(170, 550),
+      y: randomRange(380, 520),
+      vx: randomRange(-50, 50),
+      vy: randomRange(-60, 50),
+      life: randomRange(0.9, 1.6),
+      maxLife: 1.6,
+      size: randomRange(2, 4),
+      color: ["#e7b566", "#f8dd9e", "#fff4d8"][Math.floor(Math.random() * 3)],
+      gravity: 45,
+      shape: "confetti",
+      rot: randomRange(0, TAU),
+      vr: randomRange(-5, 5),
+    });
+  }
+}
+
+function updateParticles(dt) {
+  for (let i = particles.length - 1; i >= 0; i -= 1) {
+    const p = particles[i];
+    p.life -= dt;
+    if (p.life <= 0) {
+      particles.splice(i, 1);
+      continue;
+    }
+    p.vy += p.gravity * dt;
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vx *= 0.995;
+    if (p.vr) p.rot += p.vr * dt;
+  }
+  if (particles.length > 220) particles.splice(0, particles.length - 220);
+}
+
+/* ── Multiplier & slot selection ─────────────────────────── */
+
+function pickMultiplier() {
+  const total = MULTIPLIERS.reduce((sum, item) => sum + item.weight, 0);
+  let roll = Math.random() * total;
+  for (const item of MULTIPLIERS) {
+    roll -= item.weight;
+    if (roll <= 0) return item;
+  }
+  return MULTIPLIERS[0];
+}
+
+function pickLitSlots(count) {
+  const indices = Array.from({ length: SLOT.count }, (_, i) => i);
+  for (let i = indices.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [indices[i], indices[j]] = [indices[j], indices[i]];
+  }
+  return indices.slice(0, count).sort((a, b) => a - b);
+}
+
+/* ── UI helpers ──────────────────────────────────────────── */
+
+function setMarbles(value, bump = false) {
+  game.marbles = Math.max(0, Math.round(value));
+  marbleCountEl.textContent = String(game.marbles);
+  dockBalanceEl.textContent = String(game.marbles);
+  if (bump) bumpNumber(marbleCountEl);
+  updateBetUI();
+  saveGame();
+}
+
+function setTickets(value, bump = false) {
+  game.tickets = Math.max(0, Math.round(value));
+  ticketCountEl.textContent = String(game.tickets);
+  if (bump) bumpNumber(ticketCountEl);
+  saveGame();
+}
+
+function bumpNumber(el) {
+  el.classList.remove("is-bumping");
+  void el.offsetWidth;
+  el.classList.add("is-bumping");
+  window.setTimeout(() => el.classList.remove("is-bumping"), 420);
+}
+
+function updateBetUI() {
+  const maxBet = Math.max(5, Math.min(99, game.marbles));
+  if (game.phase === "idle" && game.marbles >= 5) {
+    game.bet = clamp(game.bet, 5, maxBet);
+  }
+  betInput.value = String(game.bet);
+  betInput.max = String(Math.min(99, Math.max(5, game.marbles)));
+  startBetText.textContent = String(game.bet);
+  playBet.textContent = String(game.bet);
+
+  const canStart = game.phase === "idle" && game.marbles >= game.bet && game.marbles >= 5;
+  startBtn.disabled = !canStart;
+  if (game.phase !== "idle") startLabel.textContent = "游戏进行中";
+  else if (game.marbles < 5) startLabel.textContent = "弹珠不足";
+  else startLabel.textContent = "开始游戏";
+  betMinus.disabled = game.phase !== "idle" || game.marbles < 5 || game.bet <= 5;
+  betPlus.disabled =
+    game.phase !== "idle" || game.marbles < 5 || game.bet >= Math.min(99, game.marbles);
+
+  quickRow.querySelectorAll("[data-bet]").forEach((button) => {
+    const value = Number(button.dataset.bet);
+    button.classList.toggle("is-active", value === game.bet);
+    button.disabled = value > game.marbles;
+  });
+
+  const refillMode = game.marbles < 5 && game.phase === "idle";
+  refillBtn.hidden = !refillMode;
+  quickRow.classList.toggle("needs-refill", refillMode);
+  dockBalanceEl.textContent = String(game.marbles);
+}
+
+function setPhase(phase) {
+  game.phase = phase;
+  const playing = phase !== "idle";
+  dockIdle.hidden = playing;
+  dockPlay.hidden = !playing;
+  canvas.classList.toggle("is-ready", phase === "ready");
+  canvas.classList.toggle("is-charging", phase === "charging");
+  updateBetUI();
+  updateToolTrayUI();
+}
+
+function setRoundBadge(kind, text) {
+  roundBadge.classList.toggle("is-live", kind === "live");
+  roundBadge.classList.toggle("is-ready", kind === "ready");
+  roundText.textContent = text;
+}
+
+function setPlayStatus(main, lane, live = true) {
+  playStatus.textContent = main;
+  playLane.textContent = lane;
+  liveDot.classList.toggle("is-live", live);
+}
+
+function updateLevelBadge() {
+  const progress = game.progress;
+  const need = xpNeededForLevel(progress.level);
+  levelNumber.textContent = String(progress.level);
+  levelXpFill.style.width = `${clamp((progress.xp / need) * 100, 0, 100)}%`;
+  if (progress.skillPoints > 0) {
+    levelSpBadge.hidden = false;
+    levelSpBadge.textContent = `技能点 ${progress.skillPoints}`;
+  } else {
+    levelSpBadge.hidden = true;
+  }
+  levelBadge.setAttribute(
+    "aria-label",
+    `等级 ${progress.level}，积分 ${progress.xp}/${need}。打开改装工坊`,
+  );
+  if (workshopDialog.open) updateWorkshopSummary();
+}
+
+function updateWorkshopSummary() {
+  const progress = game.progress;
+  const need = xpNeededForLevel(progress.level);
+  wsLevel.textContent = String(progress.level);
+  wsXpText.textContent = `${progress.xp} / ${need}`;
+  wsXpFill.style.width = `${clamp((progress.xp / need) * 100, 0, 100)}%`;
+  wsSkillPoints.textContent = String(progress.skillPoints);
+  wsTickets.textContent = String(game.tickets);
+}
+
+function skillNodeHTML(id, definition) {
+  const level = skillLevel(id);
+  const max = definition.max;
+  const next = level + 1;
+  const requiredLevel = level < max ? definition.reqLevels[level] ?? 1 : null;
+  const canLevel = requiredLevel !== null && game.progress.level >= requiredLevel;
+  const canBuy = level < max && canLevel && game.progress.skillPoints >= definition.cost;
+  const pips = Array.from(
+    { length: max },
+    (_, index) => `<i class="${index < level ? "is-on" : ""}"></i>`,
+  ).join("");
+  let label = `升级 · ${definition.cost} 技能点`;
+  let disabled = !canBuy;
+  if (level >= max) {
+    label = "已满级";
+    disabled = true;
+  } else if (!canLevel) {
+    label = `需 Lv.${requiredLevel}`;
+    disabled = true;
+  } else if (game.progress.skillPoints < definition.cost) {
+    label = `需要 ${definition.cost} 技能点`;
+    disabled = true;
+  }
+  const nextText =
+    level < max ? `<br>下一级：<b>${definition.effect(next)}</b>` : "";
+  return `
+    <div class="skill-node ${level >= max ? "is-maxed" : ""}">
+      <div class="skill-node-head">
+        <span class="skill-name">${definition.name}</span>
+        <span class="skill-pips" aria-label="${level}/${max} 级">${pips}</span>
+      </div>
+      <p class="skill-effect">${definition.describe}<br>当前：<b>${definition.effect(level)}</b>${nextText}</p>
+      <div class="skill-action">
+        <span class="skill-req">${level < max ? (canLevel ? `升级消耗 ${definition.cost} 技能点` : `需要人物 Lv.${requiredLevel}`) : "已满级"}</span>
+        <button class="skill-buy" type="button" data-skill="${id}" ${disabled ? "disabled" : ""}>${label}</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderSkillsPanel() {
+  wsSkillsPanel.innerHTML = SKILL_BRANCHES.map((branch) => {
+    const nodes = Object.entries(SKILLS)
+      .filter(([, definition]) => definition.branch === branch.id)
+      .map(([id, definition]) => skillNodeHTML(id, definition))
+      .join("");
+    return `
+      <section class="skill-branch" data-branch="${branch.id}">
+        <div class="skill-branch-head">
+          <span class="skill-branch-name">${branch.name}</span>
+          <span class="skill-branch-icon" aria-hidden="true">${branch.icon}</span>
+        </div>
+        <p class="skill-effect" style="margin:0 0 8px">${branch.description}</p>
+        ${nodes}
+      </section>
+    `;
+  }).join("");
+}
+
+function renderShopPanel() {
+  wsShopPanel.innerHTML = SHOP_ITEMS.map((item) => {
+    const ownedSkin =
+      item.kind === "skin" && game.progress.ownedSkins.includes(item.skin);
+    const equipped =
+      item.kind === "skin" && game.progress.equippedSkin === item.skin;
+    const ownedCount =
+      item.kind === "consumable" ? game.progress.inventory[item.key] || 0 : 0;
+    const canAfford = game.tickets >= item.price;
+    let button;
+    if (equipped) {
+      button = `<button class="shop-buy is-equipped" type="button" disabled>使用中</button>`;
+    } else if (ownedSkin) {
+      button = `<button class="shop-buy" type="button" data-shop="${item.id}">装备</button>`;
+    } else {
+      button = `<button class="shop-buy" type="button" data-shop="${item.id}" ${canAfford ? "" : "disabled"}>${item.price} 彩票</button>`;
+    }
+    const ownedLabel =
+      item.kind === "consumable"
+        ? `持有 ${ownedCount}`
+        : ownedSkin
+          ? "已拥有"
+          : "未拥有";
+    return `
+      <article class="shop-item">
+        <div class="shop-item-main">
+          <span class="shop-swatch ${item.swatch}" aria-hidden="true">${item.symbol}</span>
+          <span class="shop-item-copy">
+            <span class="shop-name">${item.name}</span>
+            <span class="shop-desc">${item.desc}</span>
+          </span>
+        </div>
+        <div class="shop-item-foot">
+          <span class="shop-owned">${ownedLabel}</span>
+          ${button}
+        </div>
+      </article>
+    `;
+  }).join("");
+}
+
+function renderWorkshop(preserveScroll = false) {
+  const scrollTop = preserveScroll ? workshopDialog.scrollTop : 0;
+  updateWorkshopSummary();
+  renderSkillsPanel();
+  renderShopPanel();
+  if (preserveScroll) workshopDialog.scrollTop = scrollTop;
+}
+
+function upgradeSkill(id) {
+  const definition = SKILLS[id];
+  if (!definition || game.phase !== "idle") return;
+  const level = skillLevel(id);
+  if (level >= definition.max) return;
+  const requiredLevel = definition.reqLevels[level] ?? 1;
+  if (game.progress.level < requiredLevel) {
+    toast(`需要人物等级 Lv.${requiredLevel}`);
+    return;
+  }
+  if (game.progress.skillPoints < definition.cost) {
+    toast("技能点不足，升级后可以获得技能点");
+    return;
+  }
+  game.progress.skillPoints -= definition.cost;
+  game.progress.skills[id] = level + 1;
+  saveGame();
+  updateLevelBadge();
+  renderWorkshop(true);
+  updateToolTrayUI();
+  audio.ticket();
+  toast(`${definition.name} 已升级到 Lv.${level + 1}`);
+}
+
+function buyShopItem(id) {
+  const item = SHOP_ITEMS.find((entry) => entry.id === id);
+  if (!item || game.phase !== "idle") return;
+  if (item.kind === "consumable") {
+    if (game.tickets < item.price) {
+      toast("彩票不足");
+      return;
+    }
+    setTickets(game.tickets - item.price);
+    game.progress.inventory[item.key] += 1;
+    saveGame();
+    renderWorkshop(true);
+    updateToolTrayUI();
+    audio.ticket();
+    toast(`已购买 ${item.name}，下一局布阵时可用`);
+    return;
+  }
+  if (item.kind === "skin") {
+    if (!game.progress.ownedSkins.includes(item.skin)) {
+      if (game.tickets < item.price) {
+        toast("彩票不足");
+        return;
+      }
+      setTickets(game.tickets - item.price);
+      game.progress.ownedSkins.push(item.skin);
+    }
+    game.progress.equippedSkin = item.skin;
+    saveGame();
+    renderWorkshop(true);
+    audio.ticket();
+    toast(`${item.name} 已装备`);
+  }
+}
+
+function openWorkshop(tab = "skills") {
+  audio.init();
+  if (game.phase !== "idle") {
+    toast("本局结束后才能改装");
+    return;
+  }
+  renderWorkshop();
+  if (typeof workshopDialog.showModal === "function") {
+    workshopDialog.showModal();
+  } else {
+    workshopDialog.setAttribute("open", "");
+  }
+  setWorkshopTab(tab);
+  workshopDialog.scrollTop = 0;
+  audio.click();
+}
+
+function closeWorkshop() {
+  if (typeof workshopDialog.close === "function") workshopDialog.close();
+  else workshopDialog.removeAttribute("open");
+}
+
+function setWorkshopTab(tab) {
+  wsTabs.querySelectorAll("[data-ws-tab]").forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.wsTab === tab);
+  });
+  wsSkillsPanel.hidden = tab !== "skills";
+  wsShopPanel.hidden = tab !== "shop";
+}
+
+function awardRoundProgress(payout) {
+  const base = 10 + Math.round(game.bet / 10);
+  const win = payout > 0 ? 5 + Math.round(payout / 20) : 0;
+  const tool = Math.max(0, Math.round(game.toolScore));
+  const total = base + win + tool;
+  const progress = game.progress;
+  const levelBefore = progress.level;
+  progress.xp += total;
+  let levelsGained = 0;
+  while (progress.level < 999 && progress.xp >= xpNeededForLevel(progress.level)) {
+    progress.xp -= xpNeededForLevel(progress.level);
+    progress.level += 1;
+    progress.skillPoints += 1;
+    levelsGained += 1;
+  }
+  const need = xpNeededForLevel(progress.level);
+  const result = {
+    base,
+    win,
+    tool,
+    total,
+    levelsGained,
+    levelBefore,
+    levelAfter: progress.level,
+    xp: progress.xp,
+    need,
+  };
+  updateLevelBadge();
+  saveGame();
+  if (levelsGained > 0) {
+    bumpNumber(levelNumber);
+    levelBadge.classList.remove("is-leveling");
+    void levelBadge.offsetWidth;
+    levelBadge.classList.add("is-leveling");
+    window.setTimeout(() => levelBadge.classList.remove("is-leveling"), 900);
+    audio.win(false);
+    window.setTimeout(() => audio.ticket(), 180);
+    toast(`升级到 Lv.${progress.level}，获得 ${levelsGained} 技能点`);
+  }
+  return result;
+}
+
+function prepareToolRound() {
+  const magnet = getMagnetConfig();
+  const pad = getPadConfig();
+  game.toolBaseCharges = { magnet: magnet.charges, pad: pad.charges };
+  game.toolAvailable = {
+    magnet: magnet.charges + (game.progress.inventory.magnet || 0),
+    pad: pad.charges + (game.progress.inventory.pad || 0),
+  };
+  game.toolPlaced = { magnet: 0, pad: 0 };
+  game.toolScore = 0;
+  game.placingTool = null;
+  activeMagnets.length = 0;
+  activePads.length = 0;
+}
+
+function updateToolTrayUI() {
+  const ready = game.phase === "ready";
+  const total = game.toolAvailable.magnet + game.toolAvailable.pad;
+  const showTray = ready && total > 0;
+  toolTray.hidden = !showTray;
+  pullMeter.hidden = ready && showTray;
+  magnetToolCount.textContent = String(game.toolAvailable.magnet);
+  padToolCount.textContent = String(game.toolAvailable.pad);
+  magnetToolBtn.disabled = !ready || game.toolAvailable.magnet <= 0;
+  padToolBtn.disabled = !ready || game.toolAvailable.pad <= 0;
+  magnetToolBtn.classList.toggle("is-armed", game.placingTool === "magnet");
+  padToolBtn.classList.toggle("is-armed", game.placingTool === "pad");
+  magnetToolBtn.setAttribute("aria-pressed", String(game.placingTool === "magnet"));
+  padToolBtn.setAttribute("aria-pressed", String(game.placingTool === "pad"));
+  toolTray.classList.toggle("is-placing", Boolean(game.placingTool));
+  canvas.classList.toggle("is-placing", Boolean(game.placingTool));
+  if (!ready) game.placingTool = null;
+}
+
+function armTool(type) {
+  if (game.phase !== "ready" || game.toolAvailable[type] <= 0) return;
+  if (game.placingTool === type) {
+    game.placingTool = null;
+    updateToolTrayUI();
+    setPlayStatus("拉下弹簧，松手发射", "满力可冲上圆顶", true);
+    showHint("拉到底，满力冲上圆顶最高点", 3200);
+    return;
+  }
+  game.placingTool = type;
+  hideBanner();
+  hideHint();
+  updateToolTrayUI();
+  if (type === "magnet") {
+    setPlayStatus("点击机台上的钉子，放置磁力钉", `剩余 ${game.toolAvailable.magnet} 枚`, true);
+  } else {
+    setPlayStatus("点击机台上的空位，放置弹力板", `剩余 ${game.toolAvailable.pad} 块`, true);
+  }
+  audio.click();
+}
+
+function clearToolPlacement(withHint = true) {
+  game.placingTool = null;
+  updateToolTrayUI();
+  setPlayStatus("拉下弹簧，松手发射", "满力可冲上圆顶", true);
+  if (withHint) showHint("拉到底，满力冲上圆顶最高点", 3200);
+}
+
+function consumeToolPlacement(type) {
+  const usesInventory = game.toolPlaced[type] >= game.toolBaseCharges[type];
+  game.toolPlaced[type] += 1;
+  game.toolAvailable[type] = Math.max(0, game.toolAvailable[type] - 1);
+  if (usesInventory && game.progress.inventory[type] > 0) {
+    game.progress.inventory[type] -= 1;
+    saveGame();
+  }
+}
+
+function spawnToolBurst(x, y, color) {
+  for (let i = 0; i < 9; i += 1) {
+    particles.push({
+      x,
+      y,
+      vx: randomRange(-90, 90),
+      vy: randomRange(-110, 25),
+      life: randomRange(0.2, 0.5),
+      maxLife: 0.5,
+      size: randomRange(1.2, 2.6),
+      color,
+      gravity: 260,
+      shape: "spark",
+    });
+  }
+}
+
+function attemptToolPlacement(point) {
+  if (game.phase !== "ready" || !game.placingTool) return false;
+  const type = game.placingTool;
+  if (game.toolAvailable[type] <= 0) return false;
+
+  if (type === "magnet") {
+    let nearest = null;
+    let bestDistance = 46;
+    for (const peg of pegs) {
+      if (activeMagnets.some((magnet) => magnet.pegId === peg.id)) continue;
+      const distance = Math.hypot(point.x - peg.x, point.y - peg.y);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        nearest = peg;
+      }
+    }
+    if (!nearest) {
+      toast("请点击一颗钉子放置磁力钉");
+      return false;
+    }
+    const config = getMagnetConfig();
+    activeMagnets.push({
+      pegId: nearest.id,
+      x: nearest.x,
+      y: nearest.y,
+      radius: config.radius,
+      strength: config.strength,
+      duration: config.duration,
+      energy: config.duration,
+      maxEnergy: config.duration,
+      activated: false,
+      pulse: 0,
+    });
+    game.toolScore += 2;
+    consumeToolPlacement("magnet");
+    spawnToolBurst(nearest.x, nearest.y, "#8ed0be");
+    audio.tone(620, 0.1, "sine", 0.04, 820);
+  } else {
+    const config = getPadConfig();
+    const radius = config.radius;
+    if (
+      point.x < 102 + radius ||
+      point.x > 558 - radius ||
+      point.y < 320 + radius ||
+      point.y > 890 - radius
+    ) {
+      toast("弹力板需要放在钉子阵范围内");
+      return false;
+    }
+    if (activePads.some((pad) => Math.hypot(pad.x - point.x, pad.y - point.y) < pad.radius + radius + 10)) {
+      toast("两块弹力板不能靠得太近");
+      return false;
+    }
+    activePads.push({
+      x: point.x,
+      y: point.y,
+      radius,
+      restitution: config.restitution,
+      hits: 0,
+      glow: 0,
+    });
+    game.toolScore += 2;
+    consumeToolPlacement("pad");
+    spawnToolBurst(point.x, point.y, "#e7b566");
+    audio.tone(300, 0.12, "triangle", 0.045, 520);
+  }
+
+  updateToolTrayUI();
+  if (game.placingTool && game.toolAvailable[game.placingTool] <= 0) {
+    game.placingTool = null;
+    updateToolTrayUI();
+  }
+  if (game.placingTool) {
+    setPlayStatus(
+      game.placingTool === "magnet" ? "继续点击钉子放置磁力钉" : "继续点击空位放置弹力板",
+      "也可以直接拉杆发射",
+      true,
+    );
+  } else {
+    setPlayStatus("布阵完成 · 拉下弹簧发射", "满力可冲上圆顶", true);
+    showHint("布阵完成，拉下弹簧发射", 2600);
+  }
+  return true;
+}
+
+function getPowerInfo(power) {
+  if (power < 0.01) return { key: "idle", label: "待拉杆" };
+  if (power < 0.34) return { key: "weak", label: "弱力" };
+  if (power < 0.67) return { key: "mid", label: "中力" };
+  if (power < 0.995) return { key: "strong", label: "强力" };
+  return { key: "full", label: "满力" };
+}
+
+function setPowerUI(power, mode = "charging") {
+  const p = clamp(power, 0, 1);
+  const percent = Math.round(p * 100);
+  const info = getPowerInfo(p);
+  pullFill.style.width = `${percent}%`;
+  pullPercent.textContent = `${percent}%`;
+  pullMeter.dataset.zone = info.key;
+  pullMeter.setAttribute("aria-valuenow", String(percent));
+  if (mode === "fired") {
+    pullZone.textContent = "已发射";
+  } else if (mode === "starting") {
+    pullZone.textContent = "准备";
+  } else if (mode === "ready") {
+    pullZone.textContent = p < 0.01 ? "待拉杆" : info.label;
+  } else {
+    pullZone.textContent = info.label;
+    if (hintBubble.classList.contains("is-visible")) {
+      hintText.textContent = `${info.label} · ${percent}% · 松手发射`;
+    }
+  }
+}
+
+function pulsePowerTick(power) {
+  const step = Math.min(4, Math.floor(clamp(power, 0, 1) * 4 + 0.0001));
+  if (step === game.hapticStep) return;
+  if (step > game.hapticStep && step > 0) {
+    if (navigator.vibrate) navigator.vibrate(8);
+    audio.tone(460 + step * 65, 0.035, "sine", 0.018);
+  }
+  game.hapticStep = step;
+}
+
+function showBanner(multiplier, slotCount) {
+  bannerMult.textContent = `×${multiplier}`;
+  bannerSlots.textContent = String(slotCount);
+  multiplierBanner.classList.add("is-visible");
+  multiplierBanner.setAttribute("aria-hidden", "false");
+  window.clearTimeout(game.bannerTimer);
+  game.bannerTimer = window.setTimeout(() => {
+    multiplierBanner.classList.remove("is-visible");
+    multiplierBanner.setAttribute("aria-hidden", "true");
+  }, 3100);
+}
+
+function hideBanner() {
+  multiplierBanner.classList.remove("is-visible");
+  multiplierBanner.setAttribute("aria-hidden", "true");
+}
+
+function showHint(text, duration = 0) {
+  hintText.textContent = text;
+  hintBubble.classList.add("is-visible");
+  window.clearTimeout(game.hintTimer);
+  if (duration > 0) {
+    game.hintTimer = window.setTimeout(hideHint, duration);
+  }
+}
+
+function hideHint() {
+  hintBubble.classList.remove("is-visible");
+  window.clearTimeout(game.hintTimer);
+}
+
+function toast(message, duration = 1900) {
+  toastEl.textContent = message;
+  toastEl.classList.add("is-visible");
+  window.clearTimeout(game.toastTimer);
+  game.toastTimer = window.setTimeout(() => {
+    toastEl.classList.remove("is-visible");
+  }, duration);
+}
+
+function showResultCard(result) {
+  if (!result) return;
+  resultCard.setAttribute("aria-hidden", "false");
+  const { won, payout, tickets, slotIndex } = result;
+  resultCard.classList.toggle("is-loss", !won);
+  if (won) {
+    resultEyebrow.textContent = tickets > 0 ? "LUCKY WIN + TICKET" : "LUCKY WIN";
+    resultTitle.textContent = `中奖 ×${game.multiplier}`;
+    resultPayout.textContent = `+${payout} 颗弹珠`;
+    resultTicket.textContent =
+      tickets > 0
+        ? `获得 ${tickets} 张彩票`
+        : payout >= 30
+          ? ""
+          : `每满 30 颗返还可得 1 张彩票`;
+    resultFoot.textContent = "母球即将沿回球坡道返回限位器…";
+  } else {
+    resultEyebrow.textContent = "RESULT";
+    resultTitle.textContent = "未中奖";
+    resultPayout.textContent = `${slotIndex + 1} 号槽 · 差一点`;
+    resultTicket.textContent = "";
+    resultFoot.textContent = "母球即将沿回球坡道返回限位器…";
+  }
+  if (result.progress) {
+    const progress = result.progress;
+    const toolText = progress.tool > 0 ? ` · 机关 +${progress.tool}` : "";
+    resultProgress.classList.toggle("is-levelup", progress.levelsGained > 0);
+    if (progress.levelsGained > 0) {
+      resultProgress.innerHTML = `本局积分 +${progress.total}${toolText}<br><b>升级 Lv.${progress.levelAfter} · 技能点 +${progress.levelsGained}</b>`;
+    } else {
+      resultProgress.innerHTML = `本局积分 +${progress.total}${toolText} · Lv.${progress.levelAfter} ${progress.xp}/${progress.need}`;
+    }
+  } else {
+    resultProgress.textContent = "";
+  }
+  resultCard.classList.add("is-visible");
+}
+
+function hideResultCard() {
+  resultCard.classList.remove("is-visible");
+  resultCard.setAttribute("aria-hidden", "true");
+}
+
+/* ── Game flow ───────────────────────────────────────────── */
+
+function schedule(fn, delay) {
+  const timer = window.setTimeout(fn, delay);
+  game.timers = game.timers || [];
+  game.timers.push(timer);
+  return timer;
+}
+
+function clearScheduled() {
+  (game.timers || []).forEach((timer) => window.clearTimeout(timer));
+  game.timers = [];
+}
+
+function startRound() {
+  audio.init();
+  if (game.phase !== "idle") return;
+  if (game.marbles < 5) {
+    toast("弹珠不足，先领取补给吧");
+    return;
+  }
+  if (game.bet > game.marbles) {
+    game.bet = game.marbles;
+    updateBetUI();
+  }
+
+  clearScheduled();
+  if (game.chargeMode === "keyboard") game.chargeMode = null;
+  game.charging = false;
+  game.charge = 0;
+  game.pointerId = null;
+  game.round += 1;
+  game.result = null;
+  game.landingResolved = false;
+  game.lastSlot = null;
+  game.flashSlot = null;
+  game.leftLane = false;
+  game.flightStartedAt = 0;
+  game.gate = 0;
+  game.gateTarget = 0;
+  game.drop = null;
+  game.returnAnim = null;
+  game.returnPos = null;
+  particles.length = 0;
+  ball.x = STAGE.x;
+  ball.y = STAGE.y;
+  ball.prevX = STAGE.x;
+  ball.prevY = STAGE.y;
+  ball.vx = 0;
+  ball.vy = 0;
+  ball.trail.length = 0;
+  ball.stallTime = 0;
+  ball.spin = 0;
+  prepareToolRound();
+
+  const config = pickMultiplier();
+  const lit = pickLitSlots(config.slots);
+  game.multiplier = config.value;
+  game.slotCount = config.slots;
+  game.litSlots = new Set(lit);
+  game.litReveal = new Map();
+  const revealStart = performance.now() + 380;
+  lit.forEach((slot, index) => {
+    game.litReveal.set(slot, revealStart + index * 125);
+  });
+
+  setPhase("starting");
+  setPowerUI(0, "starting");
+  setMarbles(game.marbles - game.bet, false);
+  setRoundBadge("live", `第 ${game.round} 局 · 亮灯中`);
+  setPlayStatus("奖槽亮灯中…", "限位器准备开启", true);
+  hideHint();
+  hideResultCard();
+  playMult.textContent = `×${game.multiplier}`;
+  playSlots.textContent = String(config.slots);
+  playBet.textContent = String(game.bet);
+  audio.click();
+
+  showBanner(game.multiplier, config.slots);
+
+  lit.forEach((slot, index) => {
+    schedule(() => {
+      if (game.phase !== "starting" && game.phase !== "ready") return;
+      audio.light(index);
+    }, 380 + index * 125);
+  });
+
+  schedule(openGate, 750);
+}
+
+function openGate() {
+  if (game.phase !== "starting") return;
+  audio.gate();
+  game.gateTarget = 1;
+  game.drop = {
+    start: performance.now() + 130,
+    duration: 720,
+    fromY: STAGE.y,
+    toY: CUP.y,
+  };
+  setRoundBadge("live", "限位器开启");
+  setPlayStatus("限位器开启 · 母球落入发射舱", "准备发射");
+
+  schedule(() => {
+    if (game.phase !== "starting") return;
+    ball.x = CUP.x;
+    ball.y = CUP.y;
+    game.drop = null;
+    if (document.activeElement instanceof HTMLElement) {
+      document.activeElement.blur();
+    }
+    hideBanner();
+    setPhase("ready");
+    setPowerUI(0, "ready");
+    setRoundBadge("ready", "待布阵");
+    setPlayStatus("先布阵，或直接拉下弹簧", "点击下方机关按钮", true);
+    showHint("先点下方机关布阵，或直接拉下弹簧", 5200);
+    audio.tone(392, 0.12, "sine", 0.04, 523.25);
+  }, 980);
+}
+
+function setHintTextSafe() {
+  hintText.textContent = "拉到底，满力冲上圆顶最高点";
+}
+
+function beginCharge(mode, pointerY = 0, clientY = 0) {
+  if (game.phase !== "ready") return false;
+  audio.init();
+  game.placingTool = null;
+  updateToolTrayUI();
+  game.phase = "charging";
+  game.charging = true;
+  game.chargeMode = mode;
+  game.charge = 0;
+  game.pointerMoved = false;
+  game.pointerStartY = pointerY;
+  game.keyboardChargeStart = performance.now();
+  game.hapticStep = -1;
+  if (mode === "pointer") {
+    const rect = canvas.getBoundingClientRect();
+    game.pointerMaxPx = Math.max(80, Math.min(140, rect.height * 0.2));
+    game.pointerClientStartY = clientY;
+  }
+  setPhase("charging");
+  setPowerUI(0, "charging");
+  setRoundBadge("live", "蓄力中");
+  setPlayStatus("弹簧蓄力中 · 松手发射", "拖动调节力度", true);
+  showHint("弱力 · 松手发射", 0);
+  audio.click();
+  return true;
+}
+
+function updateChargeFromPointer(clientY) {
+  if (game.phase !== "charging" || game.chargeMode !== "pointer") return;
+  const delta = clientY - game.pointerClientStartY;
+  if (Math.abs(delta) > 6) game.pointerMoved = true;
+  game.charge = clamp(delta / game.pointerMaxPx, 0, 1);
+  if (game.charge >= 0.97) game.charge = 1;
+  setPowerUI(game.charge, "charging");
+  pulsePowerTick(game.charge);
+}
+
+function releaseCharge(cancelled = false) {
+  if (game.phase !== "charging" || game.chargeMode !== "pointer") return;
+  game.pointerId = null;
+  if (cancelled) {
+    game.charge = 0;
+    setPhase("ready");
+    setPowerUI(0, "ready");
+    game.charging = false;
+    game.chargeMode = null;
+    setRoundBadge("ready", "待拉杆");
+    setPlayStatus("拉下弹簧，松手发射", "满力可冲上圆顶", true);
+    showHint("拉到底，满力冲上圆顶最高点", 4800);
+    return;
+  }
+  if (!game.pointerMoved || game.charge < 0.035) {
+    game.charge = 0;
+    game.charging = false;
+    game.chargeMode = null;
+    setPhase("ready");
+    setPowerUI(0, "ready");
+    setRoundBadge("ready", "待拉杆");
+    setPlayStatus("还没有拉动弹簧", "按住把手向下拉", true);
+    showHint("拉到底，满力冲上圆顶最高点", 4800);
+    toast("按住右下角把手向下拉，松手发射");
+    return;
+  }
+  const power = clamp(game.charge, 0, 1);
+  game.charging = false;
+  game.chargeMode = null;
+  launchBall(power);
+}
+
+function releaseKeyboardCharge() {
+  if (game.phase !== "charging" || game.chargeMode !== "keyboard") return;
+  const power = clamp(game.charge, 0, 1);
+  game.charging = false;
+  game.chargeMode = null;
+  launchBall(power);
+}
+
+function launchBall(power) {
+  if (game.phase !== "ready" && game.phase !== "charging") return;
+  audio.init();
+  game.phase = "flying";
+  game.charging = false;
+  game.gateTarget = 0;
+  game.springRelease = { at: performance.now(), power };
+  game.flightStartedAt = performance.now();
+  game.leftLane = false;
+  game.landingResolved = false;
+  ball.x = CUP.x + 2;
+  ball.y = CUP.y - 2;
+  ball.prevX = ball.x;
+  ball.prevY = ball.y;
+  ball.vx = 0;
+  ball.vy = -launchSpeed(power);
+  ball.trail.length = 0;
+  ball.stallTime = 0;
+  ball.spin = 0;
+
+  game.placingTool = null;
+  updateToolTrayUI();
+  setPhase("flying");
+  setPowerUI(power, "fired");
+  canvas.classList.remove("is-ready");
+  hideHint();
+  hideBanner();
+  setRoundBadge("live", "发射！");
+  setPlayStatus("母球发射 · 冲击圆顶", `弹簧动力 ${Math.round(power * 100)}%`, true);
+  spawnLaunchParticles();
+  game.shake = Math.min(2, game.shake + 0.7);
+  audio.spring(power);
+  audio.launch(power);
+  if (navigator.vibrate) navigator.vibrate(14);
+}
+
+function resolveLanding() {
+  if (game.landingResolved || game.result) return;
+  const index = getSlotIndex(ball.x);
+  const won = game.litSlots.has(index);
+  const payout = won ? game.bet * game.multiplier : 0;
+  const tickets = Math.floor(payout / 30);
+  game.landingResolved = true;
+  game.lastSlot = index;
+  game.flashSlot = index;
+  game.flashAt = performance.now();
+  const progress = awardRoundProgress(payout);
+  game.result = { won, payout, tickets, slotIndex: index, progress };
+
+  if (payout > 0) {
+    setMarbles(game.marbles + payout, true);
+    if (tickets > 0) setTickets(game.tickets + tickets, true);
+    saveGame();
+  }
+
+  spawnSlotBurst(ball.x, 982, won);
+  if (won) {
+    if (tickets > 0) spawnTicketBurst();
+    audio.win(game.multiplier >= 8);
+    if (navigator.vibrate) navigator.vibrate([18, 40, 25]);
+  } else {
+    if (navigator.vibrate) navigator.vibrate(18);
+    window.setTimeout(() => audio.lose(), 160);
+  }
+
+  setRoundBadge("live", won ? "开奖 · 中奖" : "开奖");
+  setPlayStatus(
+    won ? "中奖！母球正在回收" : "未中奖 · 母球正在回收",
+    won ? `返还 ${payout} 颗` : "落入普通槽位",
+    true,
+  );
+  hideHint();
+
+  schedule(() => {
+    showResultCard(game.result);
+    if (won && game.result.tickets > 0) {
+      window.setTimeout(() => audio.ticket(), 220);
+    }
+  }, 420);
+
+  schedule(beginReturn, 2650);
+}
+
+function beginReturn() {
+  if (!game.result || game.phase === "returning" || game.phase === "idle") return;
+  const slotCenter = SLOT.x0 + (game.lastSlot + 0.5) * SLOT.width;
+  game.returnAnim = {
+    start: performance.now(),
+    duration: 1850,
+    fromX: slotCenter,
+    fromY: Math.min(ball.y, SLOT.floor - 8),
+    slotCenter,
+  };
+  game.phase = "returning";
+  game.charge = 0;
+  game.gateTarget = 0;
+  game.returnPos = { x: slotCenter, y: SLOT.floor - 8, angle: 0 };
+  setPhase("returning");
+  setRoundBadge("live", "回球中");
+  setPlayStatus("母球沿回球坡道返回限位器", "完成本局循环", false);
+
+  window.clearTimeout(game.hideResultTimer);
+  game.hideResultTimer = window.setTimeout(hideResultCard, 900);
+
+  schedule(() => {
+    if (game.phase !== "returning") return;
+    finishReturn();
+  }, 1850);
+}
+
+function finishReturn() {
+  if (game.phase !== "returning") return;
+  game.phase = "idle";
+  game.returnAnim = null;
+  game.returnPos = null;
+  ball.x = STAGE.x;
+  ball.y = STAGE.y;
+  ball.prevX = STAGE.x;
+  ball.prevY = STAGE.y;
+  ball.vx = 0;
+  ball.vy = 0;
+  ball.trail.length = 0;
+  game.gate = 0;
+  game.gateTarget = 0;
+  game.charge = 0;
+  game.result = null;
+  game.lastSlot = null;
+  game.litSlots.clear();
+  game.litReveal.clear();
+  game.flashSlot = null;
+  activeMagnets.length = 0;
+  activePads.length = 0;
+  game.placingTool = null;
+  game.toolAvailable = { magnet: 0, pad: 0 };
+  game.toolPlaced = { magnet: 0, pad: 0 };
+  game.toolScore = 0;
+  updateToolTrayUI();
+  hideBanner();
+  hideResultCard();
+  setPhase("idle");
+  setPowerUI(0, "ready");
+  setRoundBadge("ready", "等待投珠");
+  hideHint();
+
+  if (game.marbles < 5) {
+    toast("弹珠不足 5 颗，可领取补给");
+  }
+  updateBetUI();
+}
+
+function refillMarbles() {
+  if (game.phase !== "idle") return;
+  setMarbles(game.marbles + 100, true);
+  toast("补给 100 颗弹珠");
+  audio.ticket();
+}
+
+/* ── Render: geometry helpers ────────────────────────────── */
+
+function machinePath(rx, ry, left, right, bottom) {
+  ctx.beginPath();
+  ctx.moveTo(left, bottom);
+  ctx.lineTo(left, INNER.cy);
+  ctx.ellipse(INNER.cx, INNER.cy, rx, ry, 0, Math.PI, TAU, false);
+  ctx.lineTo(right, bottom);
+  ctx.closePath();
+}
+
+function roundRect(x, y, w, h, r) {
+  const radius = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + radius, y);
+  ctx.arcTo(x + w, y, x + w, y + h, radius);
+  ctx.arcTo(x + w, y + h, x, y + h, radius);
+  ctx.arcTo(x, y + h, x, y, radius);
+  ctx.arcTo(x, y, x + w, y, radius);
+  ctx.closePath();
+}
+
+function drawSpacedText(text, centerX, y, spacing, font, color, alpha = 1) {
+  ctx.save();
+  ctx.font = font;
+  ctx.fillStyle = color;
+  ctx.globalAlpha = alpha;
+  ctx.textBaseline = "middle";
+  const chars = [...text];
+  const widths = chars.map((char) => ctx.measureText(char).width);
+  const total = widths.reduce((sum, width) => sum + width, 0) + spacing * (chars.length - 1);
+  let x = centerX - total / 2;
+  ctx.textAlign = "left";
+  chars.forEach((char, index) => {
+    ctx.fillText(char, x, y);
+    x += widths[index] + spacing;
+  });
+  ctx.restore();
+}
+
+function drawScrew(x, y, r = 3.2) {
+  ctx.save();
+  ctx.fillStyle = "#1f1a14";
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, TAU);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(237, 205, 150, 0.22)";
+  ctx.lineWidth = 0.9;
+  ctx.beginPath();
+  ctx.moveTo(x - r * 0.52, y);
+  ctx.lineTo(x + r * 0.52, y);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/* ── Render: cabinet & paper ─────────────────────────────── */
+
+function drawCabinet(now) {
+  // Outer silhouette
+  const outer = ctx.createLinearGradient(0, 0, 0, H);
+  outer.addColorStop(0, "#42382c");
+  outer.addColorStop(0.55, "#2c251d");
+  outer.addColorStop(1, "#17130f");
+  machinePath(304, 313, 56, 664, 1194);
+  ctx.fillStyle = outer;
+  ctx.fill();
+  ctx.strokeStyle = "rgba(226, 189, 127, 0.2)";
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+
+  // A thin inner bevel line
+  machinePath(286, 296, 74, 646, 1181);
+  ctx.strokeStyle = "rgba(10, 8, 6, 0.55)";
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // Paper surface
+  const paper = ctx.createLinearGradient(0, 42, 0, 1180);
+  paper.addColorStop(0, "#f8f2e6");
+  paper.addColorStop(0.52, "#f2ead9");
+  paper.addColorStop(1, "#e7dbc5");
+  machinePath(INNER.rx, INNER.ry, INNER.left, INNER.right, INNER.bottom);
+  ctx.fillStyle = paper;
+  ctx.fill();
+
+  // Speckled paper texture, clipped to the playing surface
+  ctx.save();
+  machinePath(INNER.rx, INNER.ry, INNER.left, INNER.right, INNER.bottom);
+  ctx.clip();
+
+  ctx.fillStyle = "rgba(88, 65, 39, 0.03)";
+  for (const dot of speckles) {
+    ctx.beginPath();
+    ctx.arc(dot.x, dot.y, dot.r, 0, TAU);
+    ctx.globalAlpha = dot.a;
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+
+  // Warm spotlight under the dome
+  const domeGlow = ctx.createRadialGradient(360, 230, 30, 360, 230, 360);
+  domeGlow.addColorStop(0, "rgba(255, 249, 235, 0.8)");
+  domeGlow.addColorStop(0.62, "rgba(255, 247, 229, 0.1)");
+  domeGlow.addColorStop(1, "rgba(255, 245, 225, 0)");
+  ctx.fillStyle = domeGlow;
+  ctx.fillRect(70, 35, 580, 450);
+
+  // Very soft vertical strips, like an old mechanical cabinet
+  for (let i = 0; i < 6; i += 1) {
+    const x = 112 + i * 91;
+    ctx.fillStyle = i % 2 === 0 ? "rgba(102, 81, 50, 0.016)" : "rgba(255, 255, 255, 0.1)";
+    ctx.fillRect(x, 340, 38, 690);
+  }
+
+  ctx.restore();
+
+  // Inner rail
+  machinePath(INNER.rx, INNER.ry, INNER.left, INNER.right, INNER.bottom);
+  ctx.strokeStyle = "rgba(73, 63, 48, 0.35)";
+  ctx.lineWidth = 2.2;
+  ctx.stroke();
+
+  // A fine highlight tracing the arch
+  ctx.save();
+  const archHighlight = ctx.createLinearGradient(120, 60, 600, 300);
+  archHighlight.addColorStop(0, "rgba(255, 255, 255, 0)");
+  archHighlight.addColorStop(0.4, "rgba(255, 250, 236, 0.78)");
+  archHighlight.addColorStop(0.7, "rgba(255, 255, 255, 0)");
+  ctx.strokeStyle = archHighlight;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.ellipse(INNER.cx, INNER.cy, INNER.rx - 8, INNER.ry - 8, 0, Math.PI, TAU, false);
+  ctx.stroke();
+  ctx.restore();
+
+  // Cabinet screws near the bottom
+  drawScrew(92, 1160, 3.5);
+  drawScrew(628, 1160, 3.5);
+  drawScrew(360, 1170, 2.6);
+
+  // Base lip
+  ctx.save();
+  const base = ctx.createLinearGradient(0, 1170, 0, 1194);
+  base.addColorStop(0, "#3b3126");
+  base.addColorStop(1, "#17130f");
+  ctx.fillStyle = base;
+  ctx.beginPath();
+  ctx.moveTo(54, 1170);
+  ctx.lineTo(666, 1170);
+  ctx.lineTo(664, 1194);
+  ctx.lineTo(56, 1194);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = "rgba(231, 181, 102, 0.16)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(58, 1171);
+  ctx.lineTo(662, 1171);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function drawMarquee(now) {
+  ctx.save();
+  ctx.textAlign = "center";
+
+  // Tiny calibration ticks around the arch
+  for (let i = 0; i < 17; i += 1) {
+    const angle = Math.PI + (i / 16) * Math.PI;
+    const x = INNER.cx + Math.cos(angle) * (INNER.rx - 17);
+    const y = INNER.cy + Math.sin(angle) * (INNER.ry - 17);
+    ctx.fillStyle = i % 4 === 0 ? "rgba(103, 85, 59, 0.34)" : "rgba(103, 85, 59, 0.16)";
+    ctx.beginPath();
+    ctx.arc(x, y, i % 4 === 0 ? 2.1 : 1.2, 0, TAU);
+    ctx.fill();
+  }
+
+  drawSpacedText(
+    "MARBLE DROP",
+    360,
+    143,
+    9.5,
+    '800 17px "Avenir Next", "SF Pro Display", sans-serif',
+    "#3f3425",
+    0.63,
+  );
+
+  ctx.strokeStyle = "rgba(87, 69, 45, 0.22)";
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(252, 166);
+  ctx.lineTo(310, 166);
+  ctx.moveTo(410, 166);
+  ctx.lineTo(468, 166);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(117, 92, 55, 0.5)";
+  ctx.beginPath();
+  for (let i = 0; i < 4; i += 1) {
+    const a = (i / 4) * TAU - Math.PI / 2;
+    const x = 360 + Math.cos(a) * 4;
+    const y = 166 + Math.sin(a) * 4;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fill();
+
+  drawSpacedText(
+    "物理弹珠台 · PACHINKO No.08",
+    360,
+    185,
+    2.3,
+    '600 9px "PingFang SC", "Hiragino Sans GB", sans-serif',
+    "#67533a",
+    0.55,
+  );
+
+  // A subtle winner's rosette, sitting in the empty dome space
+  ctx.save();
+  ctx.translate(360, 281);
+  const rosette = ctx.createRadialGradient(0, 0, 2, 0, 0, 49);
+  rosette.addColorStop(0, "rgba(221, 59, 44, 0.055)");
+  rosette.addColorStop(1, "rgba(221, 59, 44, 0)");
+  ctx.fillStyle = rosette;
+  ctx.beginPath();
+  ctx.arc(0, 0, 49, 0, TAU);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(125, 90, 45, 0.17)";
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.arc(0, 0, 34, 0, TAU);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(0, 0, 27, 0, TAU);
+  ctx.stroke();
+  ctx.rotate(now * 0.00004);
+  ctx.fillStyle = "rgba(137, 48, 37, 0.46)";
+  for (let i = 0; i < 8; i += 1) {
+    ctx.rotate(TAU / 8);
+    ctx.beginPath();
+    ctx.arc(0, -34, 1.55, 0, TAU);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  drawSpacedText(
+    "投珠 · 拉杆 · 好运",
+    360,
+    281,
+    3.4,
+    '650 9px "PingFang SC", "Hiragino Sans GB", sans-serif',
+    "#705c40",
+    0.58,
+  );
+
+  ctx.restore();
+}
+
+/* ── Render: pegs & slots ────────────────────────────────── */
+
+function drawPegField(now) {
+  // A faint baseline atmosphere behind the bottom pegs
+  const fieldGlow = ctx.createLinearGradient(0, 360, 0, 890);
+  fieldGlow.addColorStop(0, "rgba(255, 251, 240, 0)");
+  fieldGlow.addColorStop(1, "rgba(111, 82, 48, 0.045)");
+  ctx.fillStyle = fieldGlow;
+  ctx.fillRect(90, 360, 490, 530);
+
+  for (const peg of pegs) {
+    const pulse = peg.glow;
+    if (pulse > 0.01) {
+      const glow = ctx.createRadialGradient(peg.x, peg.y, 1, peg.x, peg.y, 23 + pulse * 10);
+      glow.addColorStop(0, `rgba(231, 181, 102, ${0.32 * pulse})`);
+      glow.addColorStop(1, "rgba(231, 181, 102, 0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(peg.x, peg.y, 23 + pulse * 10, 0, TAU);
+      ctx.fill();
+    }
+
+    ctx.save();
+    ctx.shadowColor = "rgba(53, 37, 18, 0.32)";
+    ctx.shadowBlur = 5;
+    ctx.shadowOffsetY = 2;
+    const metal = ctx.createRadialGradient(
+      peg.x - peg.r * 0.4,
+      peg.y - peg.r * 0.5,
+      0.4,
+      peg.x,
+      peg.y,
+      peg.r * 1.15,
+    );
+    metal.addColorStop(0, "#756a5a");
+    metal.addColorStop(0.3, "#37312a");
+    metal.addColorStop(1, "#17130f");
+    ctx.fillStyle = metal;
+    ctx.beginPath();
+    ctx.arc(peg.x, peg.y, peg.r, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.fillStyle = "rgba(255, 244, 220, 0.42)";
+    ctx.beginPath();
+    ctx.arc(peg.x - peg.r * 0.34, peg.y - peg.r * 0.38, peg.r * 0.2, 0, TAU);
+    ctx.fill();
+
+    if (pulse > 0.02) {
+      ctx.strokeStyle = `rgba(221, 59, 44, ${pulse * 0.3})`;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(peg.x, peg.y, peg.r + 2 + (1 - pulse) * 4, 0, TAU);
+      ctx.stroke();
+    }
+  }
+}
+
+function drawTools(now) {
+  // Bounce pads sit above the peg grid but below the marble.
+  for (const pad of activePads) {
+    const pulse = 0.72 + Math.sin(now * 0.0045 + pad.x) * 0.18;
+    ctx.save();
+    ctx.shadowColor = "rgba(57, 39, 17, 0.3)";
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 3;
+    const glow = ctx.createRadialGradient(pad.x, pad.y, 1, pad.x, pad.y, pad.radius * 2.2);
+    glow.addColorStop(0, `rgba(244, 206, 121, ${0.16 + pad.glow * 0.22})`);
+    glow.addColorStop(1, "rgba(231, 181, 102, 0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(pad.x, pad.y, pad.radius * 2.2, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    const base = ctx.createRadialGradient(
+      pad.x - pad.radius * 0.35,
+      pad.y - pad.radius * 0.4,
+      1,
+      pad.x,
+      pad.y,
+      pad.radius,
+    );
+    base.addColorStop(0, "#f8e7bd");
+    base.addColorStop(0.42, "#d9b46d");
+    base.addColorStop(1, "#7a5c2c");
+    ctx.fillStyle = base;
+    ctx.beginPath();
+    ctx.arc(pad.x, pad.y, pad.radius, 0, TAU);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(55, 42, 22, 0.66)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.strokeStyle = `rgba(255, 250, 231, ${0.35 + pad.glow * 0.5})`;
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.arc(pad.x, pad.y, pad.radius * 0.64, 0, TAU);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(86, 63, 26, 0.42)";
+    ctx.lineWidth = 1.2;
+    for (let i = 0; i < 4; i += 1) {
+      const angle = (i / 4) * TAU + Math.PI / 4;
+      ctx.beginPath();
+      ctx.moveTo(
+        pad.x + Math.cos(angle) * pad.radius * 0.22,
+        pad.y + Math.sin(angle) * pad.radius * 0.22,
+      );
+      ctx.lineTo(
+        pad.x + Math.cos(angle) * pad.radius * 0.84,
+        pad.y + Math.sin(angle) * pad.radius * 0.84,
+      );
+      ctx.stroke();
+    }
+    ctx.fillStyle = "#49351a";
+    ctx.beginPath();
+    ctx.arc(pad.x, pad.y, Math.max(2.2, pad.radius * 0.16), 0, TAU);
+    ctx.fill();
+    if (pad.glow > 0.08) {
+      ctx.strokeStyle = `rgba(255, 245, 207, ${pad.glow * 0.7})`;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(pad.x, pad.y, pad.radius + 4 + (1 - pad.glow) * 10, 0, TAU);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Magnetized pegs have a visible field radius and rotating rings.
+  for (const magnet of activeMagnets) {
+    const active = magnet.energy > 0;
+    const pulse = 0.5 + Math.sin(now * 0.005 + magnet.x * 0.11) * 0.5;
+    const alpha = active ? 0.62 + pulse * 0.26 : 0.16;
+    ctx.save();
+    const aura = ctx.createRadialGradient(
+      magnet.x,
+      magnet.y,
+      2,
+      magnet.x,
+      magnet.y,
+      magnet.radius,
+    );
+    aura.addColorStop(0, `rgba(111, 218, 190, ${alpha * 0.38})`);
+    aura.addColorStop(0.55, `rgba(102, 193, 171, ${alpha * 0.16})`);
+    aura.addColorStop(0.92, `rgba(102, 193, 171, ${alpha * 0.05})`);
+    aura.addColorStop(1, "rgba(102, 193, 171, 0)");
+    ctx.fillStyle = aura;
+    ctx.beginPath();
+    ctx.arc(magnet.x, magnet.y, magnet.radius, 0, TAU);
+    ctx.fill();
+
+    ctx.strokeStyle = `rgba(83, 174, 152, ${active ? 0.42 + pulse * 0.25 : 0.12})`;
+    ctx.lineWidth = 1.7;
+    ctx.setLineDash([6, 7]);
+    ctx.lineDashOffset = -now * 0.012;
+    ctx.beginPath();
+    ctx.arc(magnet.x, magnet.y, magnet.radius * (0.9 + pulse * 0.03), 0, TAU);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.strokeStyle = `rgba(116, 206, 183, ${active ? 0.2 + pulse * 0.25 : 0.07})`;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 6]);
+    ctx.lineDashOffset = now * 0.016;
+    ctx.beginPath();
+    ctx.arc(magnet.x, magnet.y, magnet.radius * 0.55, 0, TAU);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    const orb = ctx.createRadialGradient(
+      magnet.x - 2,
+      magnet.y - 3,
+      0,
+      magnet.x,
+      magnet.y,
+      12,
+    );
+    orb.addColorStop(0, active ? "#e5fff5" : "#a3bdb4");
+    orb.addColorStop(0.5, active ? "#89d9c3" : "#628579");
+    orb.addColorStop(1, "#2d6257");
+    ctx.fillStyle = orb;
+    ctx.beginPath();
+    ctx.arc(magnet.x, magnet.y, 8.5, 0, TAU);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(37, 86, 75, 0.75)";
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    if (active) {
+      ctx.strokeStyle = `rgba(211, 255, 241, ${0.35 + pulse * 0.5})`;
+      ctx.lineWidth = 1.3;
+      ctx.beginPath();
+      ctx.arc(magnet.x, magnet.y, 12 + pulse * 3.5, 0, TAU);
+      ctx.stroke();
+      ctx.fillStyle = `rgba(220, 255, 245, ${0.2 + pulse * 0.35})`;
+      ctx.beginPath();
+      ctx.arc(magnet.x - 2.5, magnet.y - 3, 2.2, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  if (game.placingTool === "magnet") {
+    const pulse = 0.55 + Math.sin(now * 0.007) * 0.35;
+    ctx.save();
+    for (const peg of pegs) {
+      if (activeMagnets.some((magnet) => magnet.pegId === peg.id)) continue;
+      ctx.strokeStyle = `rgba(123, 211, 188, ${0.25 + pulse * 0.5})`;
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(peg.x, peg.y, 9 + pulse * 3, 0, TAU);
+      ctx.stroke();
+      ctx.fillStyle = `rgba(123, 211, 188, ${0.1 + pulse * 0.12})`;
+      ctx.beginPath();
+      ctx.arc(peg.x, peg.y, 7, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+  } else if (game.placingTool === "pad") {
+    const pulse = 0.5 + Math.sin(now * 0.005) * 0.3;
+    const config = getPadConfig();
+    const left = 102 + config.radius;
+    const right = 558 - config.radius;
+    const top = 320 + config.radius;
+    const bottom = 890 - config.radius;
+    ctx.save();
+    ctx.setLineDash([7, 8]);
+    ctx.lineDashOffset = -now * 0.01;
+    ctx.strokeStyle = `rgba(231, 181, 102, ${0.18 + pulse * 0.18})`;
+    ctx.lineWidth = 1.4;
+    roundRect(left, top, right - left, bottom - top, 18);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.strokeStyle = `rgba(231, 181, 102, ${0.14 + pulse * 0.1})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(left + 6, top);
+    ctx.lineTo(right - 6, top);
+    ctx.moveTo(left + 6, bottom);
+    ctx.lineTo(right - 6, bottom);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawSlots(now) {
+  ctx.save();
+
+  // Recessed slot channel
+  const recess = ctx.createLinearGradient(0, SLOT.top - 4, 0, SLOT.floor + 4);
+  recess.addColorStop(0, "rgba(82, 64, 42, 0.06)");
+  recess.addColorStop(0.2, "rgba(82, 64, 42, 0.075)");
+  recess.addColorStop(1, "rgba(82, 64, 42, 0.02)");
+  ctx.fillStyle = recess;
+  ctx.fillRect(SLOT.x0, SLOT.top - 4, SLOT.x1 - SLOT.x0, SLOT.floor - SLOT.top + 8);
+
+  const isActiveRound = game.phase !== "idle" && game.litSlots.size > 0;
+  const nowMs = now;
+
+  for (let i = 0; i < SLOT.count; i += 1) {
+    const x = SLOT.x0 + i * SLOT.width;
+    const revealed = game.litReveal.has(i) && nowMs >= game.litReveal.get(i);
+    const lit = isActiveRound && game.litSlots.has(i) && revealed;
+    const flash = game.flashSlot === i && now - game.flashAt < 850;
+    const centerX = x + SLOT.width / 2;
+    const pulse = 0.68 + Math.sin(now * 0.0042 + i * 0.8) * 0.32;
+
+    if (i % 2 === 1) {
+      ctx.fillStyle = "rgba(75, 58, 38, 0.018)";
+      ctx.fillRect(x + 1.2, SLOT.top + 2, SLOT.width - 2.4, SLOT.floor - SLOT.top - 3);
+    }
+
+    if (lit) {
+      // Warm column of light
+      const beam = ctx.createLinearGradient(0, SLOT.top - 34, 0, SLOT.floor);
+      beam.addColorStop(0, `rgba(255, 228, 159, ${0.05 + pulse * 0.04})`);
+      beam.addColorStop(0.3, `rgba(238, 184, 88, ${0.25 + pulse * 0.12})`);
+      beam.addColorStop(1, `rgba(221, 59, 44, ${0.1 + pulse * 0.05})`);
+      ctx.fillStyle = beam;
+      ctx.fillRect(x + 2, SLOT.top - 34, SLOT.width - 4, SLOT.floor - SLOT.top + 34);
+
+      const pocket = ctx.createLinearGradient(0, SLOT.top, 0, SLOT.floor);
+      pocket.addColorStop(0, `rgba(238, 184, 88, ${0.32 + pulse * 0.08})`);
+      pocket.addColorStop(0.68, "rgba(221, 59, 44, 0.1)");
+      pocket.addColorStop(1, "rgba(221, 59, 44, 0.015)");
+      ctx.fillStyle = pocket;
+      ctx.fillRect(x + 2, SLOT.top, SLOT.width - 4, SLOT.floor - SLOT.top);
+
+      // Inner border of the lit pocket
+      ctx.strokeStyle = `rgba(217, 133, 41, ${0.42 + pulse * 0.28})`;
+      ctx.lineWidth = 1.4;
+      ctx.strokeRect(x + 3, SLOT.top + 2, SLOT.width - 6, SLOT.floor - SLOT.top - 6);
+
+      // Pointer hanging above the winning pocket
+      ctx.fillStyle = `rgba(173, 53, 32, ${0.72 + pulse * 0.2})`;
+      ctx.beginPath();
+      ctx.moveTo(centerX, SLOT.top - 5);
+      ctx.lineTo(centerX - 4.6, SLOT.top - 13);
+      ctx.lineTo(centerX + 4.6, SLOT.top - 13);
+      ctx.closePath();
+      ctx.fill();
+
+      // Lamp halo
+      const haloR = 30 + pulse * 7;
+      const halo = ctx.createRadialGradient(centerX, SLOT.top + 23, 0, centerX, SLOT.top + 23, haloR);
+      halo.addColorStop(0, `rgba(255, 221, 132, ${0.86 * pulse})`);
+      halo.addColorStop(0.35, `rgba(231, 181, 102, ${0.32 * pulse})`);
+      halo.addColorStop(1, "rgba(231, 181, 102, 0)");
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(centerX, SLOT.top + 23, haloR, 0, TAU);
+      ctx.fill();
+    }
+
+    if (flash) {
+      const u = clamp((now - game.flashAt) / 850, 0, 1);
+      ctx.fillStyle = `rgba(255, 241, 198, ${(1 - u) * 0.26})`;
+      ctx.fillRect(x + 2, SLOT.top - 10, SLOT.width - 4, SLOT.floor - SLOT.top + 10);
+      ctx.strokeStyle = `rgba(231, 181, 102, ${(1 - u) * 0.65})`;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x + 2, SLOT.top - 10, SLOT.width - 4, SLOT.floor - SLOT.top + 10);
+    }
+
+    // Divider light / slot number
+    ctx.fillStyle = lit ? "rgba(118, 73, 29, 0.7)" : "rgba(100, 83, 61, 0.34)";
+    ctx.font = '600 9px "SFMono-Regular", monospace';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(String(i + 1).padStart(2, "0"), centerX, SLOT.floor - 10);
+
+    if (lit) {
+      // The bulb
+      ctx.save();
+      ctx.shadowColor = "rgba(255, 196, 91, 0.95)";
+      ctx.shadowBlur = 15;
+      ctx.fillStyle = "#ffe1a0";
+      ctx.beginPath();
+      ctx.arc(centerX, SLOT.top + 23, 5.2, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.strokeStyle = "rgba(133, 73, 25, 0.65)";
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.arc(centerX, SLOT.top + 23, 7.1, 0, TAU);
+      ctx.stroke();
+
+      ctx.fillStyle = "#99251b";
+      ctx.font = '900 18px "Avenir Next", "PingFang SC", sans-serif';
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(`×${game.multiplier}`, centerX, SLOT.top + 57);
+    } else {
+      ctx.fillStyle = "rgba(83, 68, 49, 0.3)";
+      ctx.beginPath();
+      ctx.arc(centerX, SLOT.top + 23, 2.3, 0, TAU);
+      ctx.fill();
+    }
+  }
+
+  // Slot dividers
+  ctx.lineCap = "round";
+  for (let i = 1; i < SLOT.count; i += 1) {
+    const x = SLOT.x0 + i * SLOT.width;
+    ctx.strokeStyle = "rgba(82, 67, 47, 0.69)";
+    ctx.lineWidth = 2.2;
+    ctx.beginPath();
+    ctx.moveTo(x, SLOT.top);
+    ctx.lineTo(x, SLOT.floor);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(255, 248, 233, 0.46)";
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(x - 0.65, SLOT.top + 1);
+    ctx.lineTo(x - 0.65, SLOT.floor - 1);
+    ctx.stroke();
+    ctx.fillStyle = "rgba(76, 63, 46, 0.48)";
+    ctx.beginPath();
+    ctx.arc(x, SLOT.top, 2.4, 0, TAU);
+    ctx.fill();
+  }
+
+  // Top and bottom rails
+  ctx.strokeStyle = "rgba(75, 61, 43, 0.45)";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(SLOT.x0, SLOT.top);
+  ctx.lineTo(SLOT.x1, SLOT.top);
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(69, 55, 38, 0.38)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(SLOT.x0, SLOT.floor);
+  ctx.lineTo(SLOT.x1, SLOT.floor);
+  ctx.stroke();
+
+  // A tiny "WIN" plate centered above the slot bank
+  ctx.fillStyle = "rgba(117, 90, 53, 0.27)";
+  ctx.font = '700 7px "SFMono-Regular", monospace';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("W I N   S L O T S", 333, SLOT.top - 13);
+
+  ctx.restore();
+}
+
+/* ── Render: lane, return ramp, gate, spring ─────────────── */
+
+function drawLaunchLane(now) {
+  // Lane paper
+  const lane = ctx.createLinearGradient(584, 0, 638, 0);
+  lane.addColorStop(0, "rgba(102, 76, 44, 0.055)");
+  lane.addColorStop(0.55, "rgba(255, 249, 235, 0.1)");
+  lane.addColorStop(1, "rgba(80, 57, 34, 0.08)");
+  ctx.fillStyle = lane;
+  ctx.fillRect(584, 270, 54, 900);
+
+  // Faint launch chevrons
+  ctx.save();
+  ctx.strokeStyle = "rgba(118, 90, 52, 0.2)";
+  ctx.lineWidth = 2;
+  ctx.lineCap = "round";
+  for (let i = 0; i < 3; i += 1) {
+    const y = 640 + i * 24;
+    ctx.beginPath();
+    ctx.moveTo(601, y + 5);
+    ctx.lineTo(611, y - 2);
+    ctx.lineTo(621, y + 5);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // Divider rail
+  const rail = ctx.createLinearGradient(578, 0, 592, 0);
+  rail.addColorStop(0, "rgba(58, 48, 36, 0.7)");
+  rail.addColorStop(0.45, "#ece2d0");
+  rail.addColorStop(0.62, "#9b8e79");
+  rail.addColorStop(1, "rgba(48, 39, 29, 0.68)");
+  ctx.strokeStyle = rail;
+  ctx.lineWidth = 7;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(584, LANE.dividerTop);
+  ctx.lineTo(584, LANE.dividerBottom);
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(255, 249, 236, 0.42)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(581.3, LANE.dividerTop + 5);
+  ctx.lineTo(581.3, LANE.dividerBottom - 5);
+  ctx.stroke();
+
+  // Rivets on the divider
+  for (let y = 330; y < 1020; y += 86) {
+    ctx.fillStyle = "rgba(61, 50, 37, 0.44)";
+    ctx.beginPath();
+    ctx.arc(584, y, 1.5, 0, TAU);
+    ctx.fill();
+  }
+
+  // Lane top mouth marker
+  ctx.strokeStyle = "rgba(111, 86, 55, 0.35)";
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(611, 279, 23, Math.PI * 1.08, Math.PI * 1.92);
+  ctx.stroke();
+
+  ctx.fillStyle = "rgba(118, 92, 58, 0.35)";
+  ctx.font = '700 6.5px "SFMono-Regular", monospace';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("LAUNCH", 611, 306);
+
+  // Little down-guide arrow above the cup, only while idle
+  if (game.phase === "idle" && game.gate < 0.05) {
+    ctx.fillStyle = "rgba(116, 89, 52, 0.32)";
+    ctx.font = '600 7px "PingFang SC", sans-serif';
+    ctx.fillText("限位器", 611, 1037);
+  }
+}
+
+function drawReturnRamp(now) {
+  // Lower recess
+  const lower = ctx.createLinearGradient(0, SLOT.floor, 0, 1180);
+  lower.addColorStop(0, "rgba(91, 70, 45, 0.075)");
+  lower.addColorStop(0.7, "rgba(91, 70, 45, 0.03)");
+  lower.addColorStop(1, "rgba(91, 70, 45, 0.07)");
+  ctx.fillStyle = lower;
+  ctx.beginPath();
+  ctx.moveTo(82, SLOT.floor);
+  ctx.lineTo(INNER.right, SLOT.floor);
+  ctx.lineTo(INNER.right, INNER.bottom);
+  ctx.lineTo(82, INNER.bottom);
+  ctx.closePath();
+  ctx.fill();
+
+  // Ramp substrate
+  const rampGradient = ctx.createLinearGradient(0, RAMP.y0, 0, RAMP.y1 + 22);
+  rampGradient.addColorStop(0, "rgba(255, 250, 238, 0.25)");
+  rampGradient.addColorStop(1, "rgba(113, 87, 54, 0.08)");
+  ctx.fillStyle = rampGradient;
+  ctx.beginPath();
+  ctx.moveTo(88, 1005);
+  ctx.lineTo(RAMP.x0, RAMP.y0);
+  ctx.lineTo(RAMP.x1, RAMP.y1);
+  ctx.lineTo(INNER.right, RAMP.y1 + 18);
+  ctx.lineTo(INNER.right, 1140);
+  ctx.lineTo(88, 1140);
+  ctx.closePath();
+  ctx.fill();
+
+  // Directional hatch marks under the ramp
+  ctx.save();
+  ctx.strokeStyle = "rgba(104, 79, 48, 0.11)";
+  ctx.lineWidth = 1;
+  for (let x = 122; x < 540; x += 33) {
+    const y = lerp(RAMP.y0, RAMP.y1, (x - RAMP.x0) / (RAMP.x1 - RAMP.x0));
+    ctx.beginPath();
+    ctx.moveTo(x, y + 15);
+    ctx.lineTo(x + 15, y + 4);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // Return rail
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.strokeStyle = "rgba(70, 57, 41, 0.61)";
+  ctx.lineWidth = 5.5;
+  ctx.beginPath();
+  ctx.moveTo(RAMP.x0, RAMP.y0);
+  ctx.quadraticCurveTo(360, 1066, RAMP.x1, RAMP.y1);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255, 249, 237, 0.48)";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(RAMP.x0, RAMP.y0 - 2);
+  ctx.quadraticCurveTo(360, 1064, RAMP.x1, RAMP.y1 - 2);
+  ctx.stroke();
+  ctx.restore();
+
+  // Ramp chevrons
+  ctx.fillStyle = "rgba(117, 89, 52, 0.26)";
+  ctx.font = '700 7px "SFMono-Regular", monospace';
+  ctx.textAlign = "left";
+  ctx.textBaseline = "middle";
+  ctx.fillText("RETURN", 114, 1096);
+  ctx.fillStyle = "rgba(117, 89, 52, 0.2)";
+  for (let i = 0; i < 3; i += 1) {
+    ctx.beginPath();
+    ctx.moveTo(183 + i * 16, 1088);
+    ctx.lineTo(191 + i * 16, 1096);
+    ctx.lineTo(183 + i * 16, 1104);
+    ctx.strokeStyle = "rgba(117, 89, 52, 0.2)";
+    ctx.lineWidth = 1.4;
+    ctx.stroke();
+  }
+
+  // Gate / limiter assembly
+  const gateOpen = easeInOutCubic(game.gate);
+  const gateY = GATE.y;
+  const leftX = 586;
+  const rightX = 637;
+
+  ctx.save();
+  ctx.translate(0, 0);
+  ctx.lineCap = "round";
+
+  // Mounting blocks
+  ctx.fillStyle = "rgba(78, 65, 49, 0.55)";
+  roundRect(leftX - 4, gateY - 8, 11, 17, 3);
+  ctx.fill();
+  roundRect(rightX - 7, gateY - 8, 11, 17, 3);
+  ctx.fill();
+
+  // Gate arms swing open
+  ctx.strokeStyle = "rgba(79, 65, 47, 0.75)";
+  ctx.lineWidth = 4.2;
+  ctx.beginPath();
+  ctx.moveTo(leftX, gateY);
+  ctx.lineTo(lerp(leftX + 4, leftX + 2, gateOpen), gateY + 2 + gateOpen * 24);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(rightX, gateY);
+  ctx.lineTo(lerp(rightX - 4, rightX - 2, gateOpen), gateY + 2 + gateOpen * 24);
+  ctx.stroke();
+
+  // Cross bar: closed is horizontal, open retracts to the sides
+  const barHalf = 24 * (1 - gateOpen);
+  ctx.strokeStyle = "rgba(60, 49, 36, 0.82)";
+  ctx.lineWidth = 4;
+  if (barHalf > 0.5) {
+    ctx.beginPath();
+    ctx.moveTo(610 - barHalf, gateY);
+    ctx.lineTo(610 + barHalf, gateY);
+    ctx.stroke();
+  }
+
+  // Two small indicator lights on the gate
+  ctx.fillStyle = game.phase === "ready" || game.phase === "charging" ? "#a72b20" : "#5d4e3b";
+  ctx.beginPath();
+  ctx.arc(588, gateY + 10, 2, 0, TAU);
+  ctx.fill();
+  ctx.fillStyle = "rgba(92, 75, 53, 0.5)";
+  ctx.beginPath();
+  ctx.arc(634, gateY + 10, 2, 0, TAU);
+  ctx.fill();
+
+  ctx.restore();
+}
+
+function drawSpring(now) {
+  const isReady = game.phase === "ready" || game.phase === "charging";
+  const charge = game.phase === "charging" ? game.charge : 0;
+  const release = game.springRelease;
+  let visualCharge = charge;
+
+  if (release) {
+    const age = (now - release.at) / 1000;
+    if (age < 0.24) visualCharge = release.power * (1 - easeOutCubic(clamp(age / 0.24, 0, 1)));
+    else game.springRelease = null;
+  }
+
+  const headY = 1136 + visualCharge * 42;
+  const handleY = SPRING.baseHandleY + visualCharge * 24;
+  const rodTop = headY + 4;
+  const rodBottom = handleY - 10;
+
+  ctx.save();
+
+  // Cup / launch cradle
+  ctx.strokeStyle = "rgba(74, 60, 43, 0.68)";
+  ctx.lineWidth = 3.6;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.arc(610, 1123, 14, Math.PI * 0.15, Math.PI * 0.85, true);
+  ctx.stroke();
+  ctx.fillStyle = "rgba(74, 60, 43, 0.24)";
+  ctx.beginPath();
+  ctx.ellipse(610, 1136, 18, 3, 0, 0, TAU);
+  ctx.fill();
+
+  // Plunger rod
+  ctx.strokeStyle = "rgba(66, 56, 43, 0.74)";
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(610, rodTop);
+  ctx.lineTo(610, rodBottom);
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255, 247, 230, 0.36)";
+  ctx.lineWidth = 1.1;
+  ctx.beginPath();
+  ctx.moveTo(608, rodTop + 3);
+  ctx.lineTo(608, rodBottom - 4);
+  ctx.stroke();
+
+  // Plunger head
+  ctx.fillStyle = "#8d806b";
+  roundRect(595, headY - 4, 30, 7, 3.5);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(53, 42, 29, 0.52)";
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Coil spring
+  const coils = Math.max(5, Math.round((handleY - headY - 15) / 7));
+  const springBottom = handleY - 11;
+  ctx.strokeStyle = "rgba(78, 66, 50, 0.65)";
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  for (let i = 0; i <= coils * 2; i += 1) {
+    const t = i / (coils * 2);
+    const y = lerp(headY + 3, springBottom, t);
+    const x = 610 + (i % 2 === 0 ? -11 : 11) * (1 - Math.abs(t - 0.5) * 0.14);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.strokeStyle = "rgba(255, 249, 236, 0.28)";
+  ctx.lineWidth = 0.7;
+  ctx.beginPath();
+  for (let i = 0; i <= coils * 2; i += 1) {
+    const t = i / (coils * 2);
+    const y = lerp(headY + 3, springBottom, t) - 1.1;
+    const x = 610 + (i % 2 === 0 ? -11 : 11) * (1 - Math.abs(t - 0.5) * 0.14);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Handle knob
+  const knobY = handleY;
+  const knobGrad = ctx.createRadialGradient(604, knobY - 8, 2, 610, knobY, 25);
+  knobGrad.addColorStop(0, "#d7cab2");
+  knobGrad.addColorStop(0.58, "#8c7e69");
+  knobGrad.addColorStop(1, "#4d4234");
+  ctx.fillStyle = knobGrad;
+  ctx.beginPath();
+  ctx.arc(610, knobY, 22, 0, TAU);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(51, 42, 30, 0.65)";
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+
+  ctx.strokeStyle = "rgba(50, 41, 30, 0.35)";
+  ctx.lineWidth = 1.2;
+  for (let i = -1; i <= 1; i += 1) {
+    ctx.beginPath();
+    ctx.moveTo(595, knobY - 6 + i * 6);
+    ctx.lineTo(625, knobY - 6 + i * 6);
+    ctx.stroke();
+  }
+  ctx.fillStyle = "rgba(255, 248, 231, 0.4)";
+  ctx.beginPath();
+  ctx.arc(602, knobY - 9, 4.4, 0, TAU);
+  ctx.fill();
+
+  if (game.phase === "charging") {
+    const zone = getPowerInfo(game.charge).key;
+    const zoneColor =
+      zone === "weak" ? "#8dbb9b" : zone === "mid" ? "#e7b566" : zone === "strong" ? "#e9874e" : "#ff7658";
+    ctx.strokeStyle = "rgba(244, 236, 220, 0.14)";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(610, knobY, 31, -Math.PI / 2, -Math.PI / 2 + TAU);
+    ctx.stroke();
+    ctx.save();
+    ctx.strokeStyle = zoneColor;
+    ctx.lineWidth = 4.5;
+    ctx.lineCap = "round";
+    ctx.shadowColor = zoneColor;
+    ctx.shadowBlur = 10;
+    ctx.beginPath();
+    ctx.arc(610, knobY, 31, -Math.PI / 2, -Math.PI / 2 + TAU * game.charge);
+    ctx.stroke();
+    ctx.restore();
+
+    // Local readout stays above the finger while the gauge in the dock may be
+    // covered by the thumb during a downward drag.
+    const pct = Math.round(game.charge * 100);
+    roundRect(610 - 43, knobY - 78, 86, 30, 15);
+    ctx.fillStyle = "rgba(19, 14, 9, 0.92)";
+    ctx.fill();
+    ctx.strokeStyle = "rgba(231, 181, 102, 0.24)";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.fillStyle = zoneColor;
+    ctx.font = '800 16px "SFMono-Regular", "DIN Alternate", monospace';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(`${pct}%`, 610, knobY - 63);
+  }
+
+  // Ready-state tactile invitation
+  if (isReady) {
+    const pulse = 0.5 + Math.sin(now * 0.006) * 0.5;
+    ctx.strokeStyle = `rgba(221, 59, 44, ${0.22 + pulse * 0.45})`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(610, knobY, 30 + pulse * 5, 0, TAU);
+    ctx.stroke();
+
+    if (game.phase === "ready") {
+      ctx.fillStyle = "rgba(118, 49, 36, 0.82)";
+      ctx.font = '750 13px "PingFang SC", sans-serif';
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText("拉", 566, knobY - 17);
+      ctx.font = '700 17px "PingFang SC", sans-serif';
+      ctx.fillText("↓", 566, knobY + 2);
+
+      ctx.strokeStyle = "rgba(221, 59, 44, 0.35)";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(610, knobY + 29);
+      ctx.lineTo(610, knobY + 39);
+      ctx.moveTo(606, knobY + 35);
+      ctx.lineTo(610, knobY + 39);
+      ctx.lineTo(614, knobY + 35);
+      ctx.stroke();
+    }
+  }
+
+  ctx.restore();
+}
+
+/* ── Render: ball & particles ────────────────────────────── */
+
+function getBallDrawPosition(now) {
+  if (game.phase === "returning" && game.returnPos) {
+    return { x: game.returnPos.x, y: game.returnPos.y, returning: true };
+  }
+  return { x: ball.x, y: ball.y, returning: false };
+}
+
+function drawBall(now) {
+  const pos = getBallDrawPosition(now);
+  const speed = Math.hypot(ball.vx, ball.vy);
+  const isFlying = game.phase === "flying" && game.landingResolved === false;
+  const skin = BALL_SKINS[game.progress.equippedSkin] || BALL_SKINS.ruby;
+
+  // Speed trail
+  if (isFlying && speed > 420) {
+    ctx.save();
+    for (const point of ball.trail) {
+      const age = now - point.time;
+      if (age > 260) continue;
+      const alpha = (1 - age / 260) * 0.15;
+      const radius = BALL_R * (0.46 + (1 - age / 260) * 0.3);
+      ctx.fillStyle = `rgba(${skin.trail}, ${alpha})`;
+      ctx.beginPath();
+      ctx.arc(point.x, point.y, radius, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  ctx.save();
+
+  // Contact shadow
+  ctx.fillStyle = "rgba(54, 35, 18, 0.2)";
+  ctx.beginPath();
+  ctx.ellipse(pos.x + 2.5, pos.y + 10, 8, 3.2, 0, 0, TAU);
+  ctx.fill();
+
+  // Ball body
+  const grad = ctx.createRadialGradient(
+    pos.x - 3.8,
+    pos.y - 4.5,
+    1,
+    pos.x + 1,
+    pos.y + 2,
+    BALL_R * 1.25,
+  );
+  grad.addColorStop(0, skin.inner);
+  grad.addColorStop(0.28, skin.mid);
+  grad.addColorStop(0.72, skin.deep);
+  grad.addColorStop(1, skin.dark);
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, BALL_R, 0, TAU);
+  ctx.fill();
+
+  ctx.strokeStyle = skin.stroke;
+  ctx.lineWidth = 0.7;
+  ctx.stroke();
+
+  // Rotating glint
+  const glintX = pos.x - 3.3;
+  const glintY = pos.y - 4;
+  const glint = ctx.createRadialGradient(glintX, glintY, 0, glintX, glintY, 4.4);
+  glint.addColorStop(0, "rgba(255, 250, 239, 0.9)");
+  glint.addColorStop(1, "rgba(255, 240, 214, 0)");
+  ctx.fillStyle = glint;
+  ctx.beginPath();
+  ctx.arc(glintX, glintY, 4.4, 0, TAU);
+  ctx.fill();
+
+  ctx.strokeStyle = "rgba(255, 231, 194, 0.25)";
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.arc(pos.x, pos.y, BALL_R - 1.8, ball.spin + Math.PI * 0.1, ball.spin + Math.PI * 0.8);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+function drawParticles() {
+  ctx.save();
+  for (const p of particles) {
+    const alpha = clamp(p.life / p.maxLife, 0, 1);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = p.color;
+    if (p.shape === "confetti") {
+      ctx.save();
+      ctx.translate(p.x, p.y);
+      ctx.rotate(p.rot || 0);
+      ctx.fillRect(-p.size / 2, -p.size / 3, p.size, p.size * 0.68);
+      ctx.restore();
+    } else {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * (0.45 + alpha * 0.55), 0, TAU);
+      ctx.fill();
+    }
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawFocusGlow(now) {
+  if (!game.flashSlot && game.flashSlot !== 0) return;
+  const age = now - game.flashAt;
+  if (age > 850) return;
+  const centerX = SLOT.x0 + (game.flashSlot + 0.5) * SLOT.width;
+  const alpha = Math.max(0, 1 - age / 850);
+  const glow = ctx.createRadialGradient(centerX, 960, 4, centerX, 960, 125);
+  glow.addColorStop(0, `rgba(255, 229, 161, ${0.28 * alpha})`);
+  glow.addColorStop(0.45, `rgba(231, 181, 102, ${0.12 * alpha})`);
+  glow.addColorStop(1, "rgba(231, 181, 102, 0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(centerX, 960, 125, 0, TAU);
+  ctx.fill();
+}
+
+/* ── Render: master ──────────────────────────────────────── */
+
+function draw(now) {
+  ctx.setTransform(canvasScale, 0, 0, canvasScale, 0, 0);
+  ctx.clearRect(0, 0, W, H);
+
+  ctx.save();
+  if (game.shake > 0.01) {
+    const amplitude = game.shake * 1.5;
+    ctx.translate(randomRange(-amplitude, amplitude), randomRange(-amplitude, amplitude));
+  }
+
+  drawStaticLayer(now);
+  drawReturnRamp(now);
+  drawSlots(now);
+  drawMarquee(now);
+  drawPegField(now);
+  drawTools(now);
+  drawLaunchLane(now);
+  drawFocusGlow(now);
+  drawParticles();
+  drawBall(now);
+  drawSpring(now);
+
+  ctx.restore();
+}
+
+/* ── Update loop ─────────────────────────────────────────── */
+
+let lastFrame = performance.now();
+
+function update(now, dt) {
+  // Gate easing
+  if (Math.abs(game.gate - game.gateTarget) > 0.0001) {
+    const speed = 4.8 * dt;
+    game.gate += (game.gateTarget - game.gate) * Math.min(1, speed * 2.2);
+    if (Math.abs(game.gate - game.gateTarget) < 0.004) game.gate = game.gateTarget;
+  }
+
+  // Drop from limiter to launch cup
+  if (game.drop) {
+    const u = clamp((now - game.drop.start) / game.drop.duration, 0, 1);
+    if (now >= game.drop.start) {
+      const eased = u * u * (1.2 - 0.2 * u);
+      ball.x = CUP.x;
+      ball.y = lerp(game.drop.fromY, game.drop.toY, eased);
+      ball.vx = 0;
+      ball.vy = 560;
+    }
+    if (u >= 1) {
+      ball.y = CUP.y;
+      ball.vx = 0;
+      ball.vy = 0;
+      game.drop = null;
+    }
+  }
+
+  // Keyboard-driven charge
+  if (game.phase === "charging" && game.chargeMode === "keyboard") {
+    game.charge = clamp((now - game.keyboardChargeStart) / 1100, 0, 1);
+    setPowerUI(game.charge, "charging");
+    pulsePowerTick(game.charge);
+  }
+
+  // Main ball physics
+  if (game.phase === "flying") {
+    let remaining = Math.min(dt, 0.033);
+    let guard = 0;
+    while (remaining > 0 && guard < 12) {
+      const step = Math.min(PHYS_STEP, remaining);
+      stepBallPhysics(ball, step);
+      remaining -= step;
+      guard += 1;
+
+      // Track the moment the marble actually enters the peg chamber. The
+      // vertical launch lane has no overhead hood: the dome does the turning.
+      if (!game.leftLane && ball.x < MAIN_RIGHT - 1) {
+        game.leftLane = true;
+      }
+
+      // A tiny automatic anti-stall brush keeps rare wedged balls moving.
+      // Once the ball has reached a slot, leave it alone so the result view
+      // shows a calm, settled marble.
+      if (!game.landingResolved) {
+        const speed = Math.hypot(ball.vx, ball.vy);
+        if (speed < 18) {
+          ball.stallTime += step;
+        } else {
+          ball.stallTime = 0;
+        }
+        if (ball.stallTime > 1.15) {
+          ball.vx += randomRange(-120, 120);
+          ball.vy -= 150;
+          ball.stallTime = 0;
+          game.shake = Math.min(1.1, game.shake + 0.2);
+        }
+      }
+    }
+
+    ball.spin += (ball.vx / ball.r) * (dt * 0.12);
+    ball.trailClock += dt;
+    if (Math.hypot(ball.vx, ball.vy) > 300 && ball.trailClock > 0.016) {
+      ball.trailClock = 0;
+      ball.trail.push({ x: ball.x, y: ball.y, time: now });
+      if (ball.trail.length > 15) ball.trail.shift();
+    }
+
+    if (!game.landingResolved) {
+      if (ball.x < MAIN_RIGHT && ball.y > SLOT.sensorY) {
+        resolveLanding();
+      } else if (ball.vy > 40 && ball.x > MAIN_RIGHT && ball.y > 1040) {
+        // Safety net: a ball that cannot clear the lane falls back into the
+        // launch cup. Treat that as a miss and return it to the limiter.
+        game.landingResolved = true;
+        const progress = awardRoundProgress(0);
+        game.result = {
+          won: false,
+          payout: 0,
+          tickets: 0,
+          slotIndex: getSlotIndex(clamp(ball.x, SLOT.x0 + 1, SLOT.x1 - 1)),
+          progress,
+        };
+        game.lastSlot = game.result.slotIndex;
+        game.flashSlot = game.lastSlot;
+        game.flashAt = now;
+        setRoundBadge("live", "开奖");
+        setPlayStatus("母球回到了发射舱", "本局未中奖", true);
+        schedule(() => showResultCard(game.result), 420);
+        schedule(beginReturn, 2650);
+        audio.lose();
+      } else if (now - game.flightStartedAt > 30000) {
+        ball.x = randomRange(SLOT.x0 + 20, SLOT.x1 - 20);
+        ball.y = SLOT.sensorY + 4;
+        resolveLanding();
+      }
+    }
+  }
+
+  // Return animation
+  if (game.phase === "returning" && game.returnAnim) {
+    const anim = game.returnAnim;
+    const t = clamp((now - anim.start) / anim.duration, 0, 1);
+    const startX = anim.fromX;
+    const rampY = (x) => lerp(RAMP.y0, RAMP.y1, clamp((x - RAMP.x0) / (RAMP.x1 - RAMP.x0), 0, 1));
+
+    if (t < 0.2) {
+      const u = t / 0.2;
+      const x = startX;
+      const y = lerp(anim.fromY, rampY(startX), easeInCubic(u));
+      game.returnPos = { x, y, angle: Math.PI * 2 * u };
+    } else if (t < 0.84) {
+      const u = (t - 0.2) / 0.64;
+      const eased = easeInOutCubic(u);
+      const x = lerp(startX, RAMP.x1 - 2, eased);
+      const y = rampY(x) - 1.5;
+      game.returnPos = { x, y, angle: Math.PI * 4 * eased };
+    } else {
+      const u = (t - 0.84) / 0.16;
+      const eased = easeOutCubic(u);
+      const x = lerp(RAMP.x1 - 2, STAGE.x, eased);
+      const y = lerp(RAMP.y1 - 1.5, STAGE.y, eased);
+      game.returnPos = { x, y, angle: Math.PI * 4 + Math.PI * 2 * eased };
+    }
+    if (t >= 1) finishReturn();
+  }
+
+  // Decay all decorative state
+  for (const peg of pegs) peg.glow *= Math.pow(0.02, dt);
+  for (const pad of activePads) pad.glow *= Math.pow(0.015, dt);
+  for (const magnet of activeMagnets) magnet.pulse *= Math.pow(0.01, dt);
+  updateParticles(dt);
+  game.shake *= Math.pow(0.001, dt);
+  if (game.shake < 0.003) game.shake = 0;
+}
+
+function frame(now) {
+  const dt = Math.min(0.033, Math.max(0, (now - lastFrame) / 1000));
+  lastFrame = now;
+  update(now, dt);
+  draw(now);
+  requestAnimationFrame(frame);
+}
+
+/* ── Canvas resolution & layout ──────────────────────────── */
+
+function rebuildStaticLayer() {
+  if (!canvas.width || !canvas.height) return;
+  const buffer = document.createElement("canvas");
+  buffer.width = canvas.width;
+  buffer.height = canvas.height;
+  const bufferCtx = buffer.getContext("2d");
+  bufferCtx.setTransform(canvasScale, 0, 0, canvasScale, 0, 0);
+  const previousCtx = ctx;
+  ctx = bufferCtx;
+  try {
+    drawCabinet(performance.now());
+  } finally {
+    ctx = previousCtx;
+  }
+  staticLayer = buffer;
+}
+
+function drawStaticLayer(now) {
+  if (!staticLayer) {
+    drawCabinet(now);
+    return;
+  }
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(staticLayer, 0, 0);
+  ctx.restore();
+}
+
+function fitMachine() {
+  const rect = stageEl.getBoundingClientRect();
+  const ratio = W / H;
+  let height = rect.height;
+  let width = height * ratio;
+  if (width > rect.width) {
+    width = rect.width;
+    height = width / ratio;
+  }
+  width = Math.max(1, width);
+  height = Math.max(1, height);
+  machine.style.width = `${width}px`;
+  machine.style.height = `${height}px`;
+
+  // Match the backing store to the actual device pixels instead of always
+  // rendering at a fixed 2×. On a phone this is close to a 1:1 pixel mapping,
+  // which keeps the many gradients/shadows at a smooth frame rate while still
+  // looking crisp on Retina displays.
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const desiredScale = clamp((width * dpr) / W, 1, 2);
+  const pixelWidth = Math.round(W * desiredScale);
+  const pixelHeight = Math.round(H * desiredScale);
+  if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {
+    canvas.width = pixelWidth;
+    canvas.height = pixelHeight;
+    canvasScale = pixelWidth / W;
+    ctx.setTransform(canvasScale, 0, 0, canvasScale, 0, 0);
+    rebuildStaticLayer();
+  }
+}
+
+const resizeObserver = new ResizeObserver(fitMachine);
+resizeObserver.observe(stageEl);
+window.addEventListener("resize", fitMachine);
+
+/* ── Input ───────────────────────────────────────────────── */
+
+function canvasPoint(event) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: ((event.clientX - rect.left) / rect.width) * W,
+    y: ((event.clientY - rect.top) / rect.height) * H,
+  };
+}
+
+function isSpringHit(point) {
+  const knobY = SPRING.baseHandleY + (game.phase === "charging" ? game.charge * 24 : 0);
+  const inKnob = Math.hypot(point.x - SPRING.x, point.y - knobY) < 60;
+  const inShaft = point.x > 508 && point.x < 706 && point.y > 960 && point.y < 1240;
+  return inKnob || inShaft;
+}
+
+canvas.addEventListener(
+  "pointerdown",
+  (event) => {
+    if (event.button !== undefined && event.button !== 0) return;
+    if (event.target !== canvas) return;
+    audio.init();
+
+    if (game.phase === "ready") {
+      const point = canvasPoint(event);
+      const springHit = isSpringHit(point);
+      if (game.placingTool && !springHit) {
+        event.preventDefault();
+        attemptToolPlacement(point);
+        return;
+      }
+      if (springHit) {
+        event.preventDefault();
+        if (game.placingTool) clearToolPlacement(false);
+        game.pointerId = event.pointerId;
+        canvas.setPointerCapture?.(event.pointerId);
+        beginCharge("pointer", point.y, event.clientY);
+      } else {
+        toast(game.placingTool ? "请点击机台放置机关" : "先点下方机关布阵，或直接拉下弹簧");
+        if (!game.placingTool) showHint("先点下方机关布阵，或直接拉下弹簧", 2200);
+      }
+    }
+  },
+  { passive: false },
+);
+
+canvas.addEventListener(
+  "pointermove",
+  (event) => {
+    if (game.phase !== "charging" || game.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    updateChargeFromPointer(event.clientY);
+  },
+  { passive: false },
+);
+
+canvas.addEventListener(
+  "pointerup",
+  (event) => {
+    if (game.pointerId !== event.pointerId) return;
+    event.preventDefault();
+    releaseCharge(false);
+  },
+  { passive: false },
+);
+
+canvas.addEventListener("pointercancel", (event) => {
+  if (game.pointerId !== event.pointerId) return;
+  releaseCharge(true);
+});
+
+window.addEventListener("pointerup", (event) => {
+  if (game.pointerId !== null && game.pointerId === event.pointerId) {
+    releaseCharge(false);
+  }
+});
+
+window.addEventListener("keydown", (event) => {
+  const target = event.target;
+  const isTextInput =
+    target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement;
+  const isButton = target instanceof HTMLButtonElement;
+
+  if (event.code === "Space" && !isTextInput && !workshopDialog.open) {
+    if (game.phase === "ready") {
+      event.preventDefault();
+      audio.init();
+      beginCharge("keyboard");
+    } else if (game.phase === "charging" && game.chargeMode === "keyboard") {
+      event.preventDefault();
+    }
+  }
+
+  if (
+    event.code === "Enter" &&
+    !isTextInput &&
+    !isButton &&
+    !helpDialog.open &&
+    !workshopDialog.open &&
+    game.phase === "idle"
+  ) {
+    startRound();
+  }
+});
+
+window.addEventListener("keyup", (event) => {
+  if (event.code === "Space" && game.phase === "charging" && game.chargeMode === "keyboard") {
+    event.preventDefault();
+    releaseKeyboardCharge();
+  }
+});
+
+/* ── UI event wiring ─────────────────────────────────────── */
+
+function setBet(value, announce = false) {
+  if (game.phase !== "idle") return;
+  const maxBet = Math.max(5, Math.min(99, game.marbles));
+  const next = clamp(Math.round(Number(value) || 5), 5, maxBet);
+  game.bet = next;
+  updateBetUI();
+  if (announce) saveGame();
+}
+
+betMinus.addEventListener("click", () => {
+  audio.init();
+  audio.click();
+  setBet(game.bet - 1, true);
+});
+
+betPlus.addEventListener("click", () => {
+  audio.init();
+  audio.click();
+  setBet(game.bet + 1, true);
+});
+
+betInput.addEventListener("change", () => {
+  setBet(betInput.value, true);
+});
+
+betInput.addEventListener("blur", () => {
+  setBet(betInput.value, true);
+});
+
+betInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    setBet(betInput.value, true);
+    betInput.blur();
+  }
+});
+
+quickRow.querySelectorAll("[data-bet]").forEach((button) => {
+  button.addEventListener("click", () => {
+    audio.init();
+    audio.click();
+    setBet(Number(button.dataset.bet), true);
+  });
+});
+
+startBtn.addEventListener("click", () => {
+  startRound();
+});
+
+magnetToolBtn.addEventListener("click", () => {
+  audio.init();
+  armTool("magnet");
+});
+
+padToolBtn.addEventListener("click", () => {
+  audio.init();
+  armTool("pad");
+});
+
+toolSkipBtn.addEventListener("click", () => {
+  audio.init();
+  clearToolPlacement(true);
+});
+
+levelBadge.addEventListener("click", () => openWorkshop("skills"));
+ticketStat.addEventListener("click", () => openWorkshop("shop"));
+workshopClose.addEventListener("click", closeWorkshop);
+workshopDialog.addEventListener("click", (event) => {
+  if (event.target === workshopDialog) closeWorkshop();
+});
+wsTabs.addEventListener("click", (event) => {
+  const tab = event.target.closest("[data-ws-tab]");
+  if (tab) setWorkshopTab(tab.dataset.wsTab);
+});
+wsSkillsPanel.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-skill]");
+  if (button) upgradeSkill(button.dataset.skill);
+});
+wsShopPanel.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-shop]");
+  if (button) buyShopItem(button.dataset.shop);
+});
+
+refillBtn.addEventListener("click", () => {
+  audio.init();
+  refillMarbles();
+});
+
+soundBtn.addEventListener("click", () => {
+  game.soundOn = !game.soundOn;
+  soundBtn.setAttribute("aria-pressed", String(game.soundOn));
+  soundBtn.setAttribute("aria-label", game.soundOn ? "关闭音效" : "开启音效");
+  saveGame();
+  if (game.soundOn) {
+    audio.init();
+    audio.ticket();
+    toast("音效已开启");
+  } else {
+    toast("音效已关闭");
+  }
+});
+
+helpBtn.addEventListener("click", () => {
+  audio.init();
+  audio.click();
+  if (typeof helpDialog.showModal === "function") helpDialog.showModal();
+  else helpDialog.setAttribute("open", "");
+});
+
+function closeHelp() {
+  if (typeof helpDialog.close === "function") helpDialog.close();
+  else helpDialog.removeAttribute("open");
+}
+
+helpClose.addEventListener("click", closeHelp);
+helpDone.addEventListener("click", closeHelp);
+helpDialog.addEventListener("click", (event) => {
+  if (event.target === helpDialog) closeHelp();
+});
+
+resetBtn.addEventListener("click", () => {
+  const confirmed = window.confirm("重置本地进度？弹珠回到 100 颗，彩票、等级、技能和商店收藏都会清空。");
+  if (!confirmed) return;
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    /* ignore */
+  }
+  clearScheduled();
+  window.clearTimeout(game.hideResultTimer);
+  game.phase = "idle";
+  game.marbles = INITIAL_MARBLES;
+  game.tickets = 0;
+  game.bet = 20;
+  game.round = 0;
+  game.result = null;
+  game.progress = defaultProgress();
+  game.placingTool = null;
+  game.toolAvailable = { magnet: 0, pad: 0 };
+  game.toolBaseCharges = { magnet: 0, pad: 0 };
+  game.toolPlaced = { magnet: 0, pad: 0 };
+  game.toolScore = 0;
+  activeMagnets.length = 0;
+  activePads.length = 0;
+  game.litSlots.clear();
+  game.litReveal.clear();
+  game.returnAnim = null;
+  game.returnPos = null;
+  game.gate = 0;
+  game.gateTarget = 0;
+  game.drop = null;
+  game.charge = 0;
+  game.charging = false;
+  game.chargeMode = null;
+  ball.x = STAGE.x;
+  ball.y = STAGE.y;
+  ball.vx = 0;
+  ball.vy = 0;
+  ball.trail.length = 0;
+  particles.length = 0;
+  setMarbles(INITIAL_MARBLES, true);
+  setTickets(0, true);
+  updateLevelBadge();
+  setPhase("idle");
+  setPowerUI(0, "ready");
+  setRoundBadge("ready", "等待投珠");
+  hideBanner();
+  hideHint();
+  hideResultCard();
+  updateBetUI();
+  closeHelp();
+  toast("本地进度已重置");
+});
+
+// Tap the canvas anywhere after settling is ignored, but pointerup outside is
+// still handled so a dragged spring cannot stay stuck.
+window.addEventListener("blur", () => {
+  if (game.phase === "charging" && game.chargeMode === "pointer") {
+    releaseCharge(true);
+  }
+});
+
+/* ── Debug API (handy for QA, harmless in production) ─────── */
+
+function snapshot() {
+  return {
+    phase: game.phase,
+    marbles: game.marbles,
+    tickets: game.tickets,
+    bet: game.bet,
+    round: game.round,
+    multiplier: game.multiplier,
+    slotCount: game.slotCount,
+    litSlots: [...game.litSlots],
+    result: game.result ? { ...game.result } : null,
+    ball: { x: Math.round(ball.x), y: Math.round(ball.y), vx: Math.round(ball.vx), vy: Math.round(ball.vy) },
+    gate: game.gate,
+    leftLane: game.leftLane,
+    landingResolved: game.landingResolved,
+    progress: {
+      level: game.progress.level,
+      xp: game.progress.xp,
+      skillPoints: game.progress.skillPoints,
+      skills: { ...game.progress.skills },
+      inventory: { ...game.progress.inventory },
+      equippedSkin: game.progress.equippedSkin,
+    },
+    toolAvailable: { ...game.toolAvailable },
+    toolPlaced: { ...game.toolPlaced },
+    placingTool: game.placingTool,
+    toolScore: game.toolScore,
+    activeMagnets: activeMagnets.map((magnet) => ({
+      x: Math.round(magnet.x),
+      y: Math.round(magnet.y),
+      energy: Number(magnet.energy.toFixed(2)),
+    })),
+    activePads: activePads.map((pad) => ({
+      x: Math.round(pad.x),
+      y: Math.round(pad.y),
+      hits: pad.hits,
+    })),
+    litRevealDone: game.litReveal.size
+      ? performance.now() >= Math.max(...game.litReveal.values())
+      : true,
+  };
+}
+
+function simulateLaunch(power = 0.8) {
+  const b = {
+    x: CUP.x + 2,
+    y: CUP.y - 2,
+    prevX: CUP.x + 2,
+    prevY: CUP.y - 2,
+    vx: 0,
+    vy: -launchSpeed(power),
+    r: BALL_R,
+    spin: 0,
+    silent: true,
+    trail: [],
+  };
+  let leftLane = false;
+  let bestY = b.y;
+  const totalSteps = 240 * 28;
+  for (let i = 0; i < totalSteps; i += 1) {
+    stepBallPhysics(b, 1 / 240);
+    bestY = Math.min(bestY, b.y);
+    if (!leftLane && b.x < MAIN_RIGHT - 1) leftLane = true;
+    if (b.x < MAIN_RIGHT && b.y > SLOT.sensorY) {
+      return {
+        slot: getSlotIndex(b.x),
+        time: i / 240,
+        bestY,
+        leftLane,
+        fellBack: false,
+      };
+    }
+    if (b.vy > 40 && b.x > MAIN_RIGHT && b.y > 1040) {
+      return { slot: null, time: i / 240, bestY, leftLane, fellBack: true };
+    }
+    const speed = Math.hypot(b.vx, b.vy);
+    if (speed < 15) {
+      b.stallTime = (b.stallTime || 0) + 1 / 240;
+      if (b.stallTime > 1.2) {
+        b.vx += randomRange(-110, 110);
+        b.vy -= 150;
+        b.stallTime = 0;
+      }
+    } else {
+      b.stallTime = 0;
+    }
+  }
+  return { slot: null, time: 28, bestY, leftLane, fellBack: false, timedOut: true };
+}
+
+function debugTrace(power = 0.8, sampleEvery = 15) {
+  const b = {
+    x: CUP.x + 2,
+    y: CUP.y - 2,
+    prevX: CUP.x + 2,
+    prevY: CUP.y - 2,
+    vx: 0,
+    vy: -launchSpeed(power),
+    r: BALL_R,
+    spin: 0,
+    silent: true,
+    trail: [],
+  };
+  const points = [];
+  let leftLane = false;
+  for (let i = 0; i < 240 * 20; i += 1) {
+    stepBallPhysics(b, 1 / 240);
+    if (!leftLane && b.x < MAIN_RIGHT - 1) leftLane = true;
+    if (i % sampleEvery === 0) {
+      points.push({
+        t: +(i / 240).toFixed(2),
+        x: Math.round(b.x),
+        y: Math.round(b.y),
+        vx: Math.round(b.vx),
+        vy: Math.round(b.vy),
+      });
+    }
+    if (b.x < MAIN_RIGHT && b.y > SLOT.sensorY) {
+      return { slot: getSlotIndex(b.x), leftLane, points };
+    }
+    if (b.vy > 40 && b.x > MAIN_RIGHT && b.y > 1040) {
+      return { slot: null, leftLane, fellBack: true, points };
+    }
+  }
+  return { slot: null, leftLane, points };
+}
+
+function debugSimulate(count = 100, power = 0.8) {
+  const bins = Array(SLOT.count).fill(0);
+  let misses = 0;
+  let fellBack = 0;
+  let timeouts = 0;
+  let minY = Infinity;
+  let maxTime = 0;
+  let apexHits = 0;
+  let worstBestY = 0;
+  for (let i = 0; i < count; i += 1) {
+    const result = simulateLaunch(power);
+    if (result.bestY < 70) apexHits += 1;
+    worstBestY = Math.max(worstBestY, Math.round(result.bestY));
+    if (result.slot === null) {
+      if (result.fellBack) fellBack += 1;
+      else timeouts += 1;
+      misses += 1;
+    } else {
+      bins[result.slot] += 1;
+    }
+    minY = Math.min(minY, result.bestY);
+    maxTime = Math.max(maxTime, result.time);
+  }
+  return {
+    count,
+    power,
+    bins,
+    misses,
+    fellBack,
+    timeouts,
+    minY: Math.round(minY),
+    maxTime: Number(maxTime.toFixed(2)),
+    apexHits,
+    apexRate: Number((apexHits / count).toFixed(2)),
+    worstBestY,
+  };
+}
+
+window.__MARBLE_DROP__ = {
+  snapshot,
+  simulate: debugSimulate,
+  simulateOne: simulateLaunch,
+  trace: debugTrace,
+};
+
+/* ── Init ────────────────────────────────────────────────── */
+
+function initUI() {
+  marbleCountEl.textContent = String(game.marbles);
+  ticketCountEl.textContent = String(game.tickets);
+  dockBalanceEl.textContent = String(game.marbles);
+  soundBtn.setAttribute("aria-pressed", String(game.soundOn));
+  soundBtn.setAttribute("aria-label", game.soundOn ? "关闭音效" : "开启音效");
+  updateBetUI();
+  setPhase("idle");
+  setPowerUI(0, "ready");
+  updateLevelBadge();
+  setRoundBadge("ready", "等待投珠");
+  setPlayStatus("等待投珠", "选择投入后开始", false);
+  // Keep idle play dock hidden, but its markup shows the intended state for QA.
+  dockPlay.hidden = true;
+  fitMachine();
+  requestAnimationFrame(fitMachine);
+}
+
+initUI();
+lastFrame = performance.now();
+requestAnimationFrame(frame);
