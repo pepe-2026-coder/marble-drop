@@ -140,12 +140,97 @@ GitHub Pages 的项目站点地址为：
 
 ### 源码与 Git
 
-项目已使用 Git 管理，提交按「基线 / 工程化与经济 / 文档」拆分。挑战模式原型代码仍在仓库内部但未挂载到当前街机入口，后续重构后再开放。
+项目已使用 Git 管理，提交按「基线 / 工程化与经济 / 文档」拆分。挑战模式原型代码仍在仓库内部但未挂载到当前街机入口，后续重构后再开放。分支与合并规则见下方「开发流程」。
 
 ```bash
 git log --oneline
 git status
 ```
+
+## 开发流程
+
+`main` 是唯一长期分支，**始终可部署、可发布**。所有新功能、修复和文档改动都走功能分支，合并进 `main` 前必须先通过验收。这样可以保证多个功能并行开发时，各自改动互不覆盖，`main` 上也不会出现半成品冲突。
+
+```text
+① 同步 main ─► ② 切出功能分支 ─► ③ 开发 + 自测 ─► ④ 维护者验收 ─► ⑤ 合并回 main ─► ⑥ 推送 GitHub
+                                                            （并行功能各走各自的 ②–④，互不干扰）
+```
+
+### 1. 开发前先同步主分支
+
+每次开始新功能前，都要从远端拉取最新的 `main`，避免在过期的代码上开工：
+
+```bash
+git switch main
+git pull --ff-only origin main
+```
+
+如果工作区有未提交的改动，先提交到当前功能分支，或 `git stash` 暂存后再同步，不要在脏工作区上切分支。
+
+### 2. 从 `main` 分出功能分支
+
+```bash
+git switch -c feature/功能名
+```
+
+- 分支必须从最新的 `main` 切出，不要从其他功能分支再分叉。
+- 命名约定：`feature/` 新功能、`fix/` 修复、`docs/` 文档、`chore/` 配置与工具。名称用短横线连接，例如 `feature/daily-challenge`、`fix/payout-lag`。
+- 一个分支只做一件事。多个功能并行时各开各的分支，互不共享分支。
+
+### 3. 在功能分支上开发
+
+```bash
+npm run check        # 提交前必须通过
+npm start            # 本地 127.0.0.1:4173 手动验证
+git add -A
+git commit -m "feat: 简要说明"
+```
+
+提交信息沿用 `feat:` / `fix:` / `docs:` / `chore:` / `ci:` 前缀。开发期间可以多次提交，也可以在功能分支上直接推送备份（`git push -u origin feature/功能名`）。
+
+### 4. 提交验收
+
+功能完成后，把分支状态交给项目维护者验收：
+
+```bash
+git switch main
+git pull --ff-only origin main
+git switch feature/功能名
+git rebase main          # 先对齐主分支，提前解决冲突
+npm run check
+git push -u origin feature/功能名
+```
+
+验收内容包括：`npm run check` 通过、本地实际运行无报错、功能符合预期、没有顺带改动无关文件。**验收通过之前不合并、不推送 `main`。**
+
+### 5. 验收通过后合并进 `main` 并推送
+
+```bash
+git switch main
+git pull --ff-only origin main
+git merge --no-ff feature/功能名 -m "merge: 功能说明"
+npm run check
+git push origin main
+```
+
+推送 `main` 会触发 GitHub Pages 部署。合并后再确认一次线上地址可以正常打开。
+
+也可以改用 Pull Request：把功能分支推送到 GitHub 后开 PR，由维护者 review 通过再点 Merge，流程和效果与上面的本地合并不变。
+
+### 6. 收尾
+
+```bash
+git branch -d feature/功能名                 # 删除本地分支
+git push origin --delete feature/功能名      # 删除远端分支
+```
+
+### 分支规则
+
+- 禁止直接在 `main` 上开发或提交；`main` 只接受验收通过后的合并，以及发布相关的必要改动。
+- 同一时间存在多个功能分支时，先合并的先对齐 `main`；后合并的分支在验收前重新 `rebase main`，冲突在功能分支内解决。
+- 功能分支上的提交可以整理（`rebase -i`），合并进 `main` 的历史保持一次合并提交。
+- 合并前发现主线已有相关改动，以 `main` 为准调整功能分支，不要用强制推送覆盖他人提交。
+- 建议在 GitHub 仓库设置中为 `main` 开启分支保护（禁止直接 push、合并前要求 PR 审核），让流程由平台兜底，避免误操作。
 
 ## 技术说明
 
