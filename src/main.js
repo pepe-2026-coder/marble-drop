@@ -240,8 +240,8 @@ function renderTableShop(state) {
   tableGrid.innerHTML = TABLE_LIST.map((table) => {
     const owned = state.tables.owned.includes(table.id);
     const isEquipped = state.tables.equipped === table.id;
-    const canAfford = state.coins >= table.price;
-    const priceLabel = table.price > 0 ? `${table.price} 游戏币` : "免费机台";
+    const canAfford = state.tickets >= table.price;
+    const priceLabel = table.price > 0 ? `${table.price} 彩票` : "免费机台";
 
     let action;
     if (isEquipped) {
@@ -249,7 +249,7 @@ function renderTableShop(state) {
     } else if (owned) {
       action = `<button class="skin-btn" type="button" data-table-equip="${table.id}">装备</button>`;
     } else {
-      action = `<button class="skin-btn is-buy" type="button" data-table-buy="${table.id}" ${canAfford ? "" : "disabled"} title="${canAfford ? "用游戏币购买并装备" : "游戏币不足"}">${priceLabel}</button>`;
+      action = `<button class="skin-btn is-buy" type="button" data-table-buy="${table.id}" ${canAfford ? "" : "disabled"} title="${canAfford ? "用彩票购买并装备" : "彩票不足"}">${priceLabel}</button>`;
     }
 
     const cardClass = [
@@ -308,8 +308,8 @@ function buyTable(id) {
   if (!account.ownsTable(id)) {
     const result = account.purchaseTable(id, table.price);
     if (!result.ok) {
-      const missing = Math.max(0, table.price - account.coins);
-      toast(result.reason === "coins" ? `还差 ${missing} 游戏币` : "暂时无法购买这台机台");
+      const missing = Math.max(0, table.price - account.tickets);
+      toast(result.reason === "tickets" ? `还差 ${missing} 张彩票` : "暂时无法购买这台机台");
       return;
     }
     audio.init();

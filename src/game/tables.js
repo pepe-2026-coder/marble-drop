@@ -74,26 +74,29 @@ const NEON_SPLITTERS = [
   { x: 220, y: 500, r: 12, hue: "magenta", phase: 1.2 },
   { x: 360, y: 504, r: 13, hue: "cyan", phase: 2.8 },
   { x: 500, y: 500, r: 12, hue: "magenta", phase: 4.7 },
-  // Edge splitters catch a marble that tries to hug the left rail.
-  { x: 116, y: 424, r: 11, hue: "yellow", phase: 1.1 },
-  { x: 116, y: 506, r: 10, hue: "cyan", phase: 3.6 },
+  // Edge splitters sit close enough to the rail to catch a marble that tries
+  // to hug it. A ball centre at x≈92 cannot squeeze past these pins.
+  { x: 104, y: 424, r: 11, hue: "yellow", phase: 1.1 },
+  { x: 104, y: 506, r: 10, hue: "cyan", phase: 3.6 },
 ].map((peg, index) => ({ ...peg, kind: "splitter", id: `n-${index}` }));
 
 /** A second rank of neon splitters just above the skyline. The layer-2 cars
     tend to sweep marbles toward the left rail, so these pins break that sweep
     before the marble reaches the rooftop layer. */
-const NEON_MID_PINS = [118, 232, 350, 468, 566].map((x, index) => ({
+const NEON_MID_PINS = [104, 232, 350, 468, 566].map((x, index) => ({
   x,
   y: 706,
-  r: 9,
+  r: index === 0 ? 10 : 9,
   kind: "splitter",
   hue: ["cyan", "yellow", "magenta", "cyan", "yellow"][index],
   phase: 0.8 + index * 1.7,
   id: `nm-${index}`,
 }));
 
-/** Small street-level neon dots just above the slot bank. */
-const NEON_STREET_PEGS = [170, 270, 370, 470, 556].map((x, index) => ({
+/** Street lamps sit at the intersection gaps. A marble that drops through a
+    gap clips a lamp and scatters into one of the neighbouring slots, instead
+    of always landing in the same pocket. */
+const NEON_STREET_PEGS = [97, 199, 295, 395, 495, 569].map((x, index) => ({
   x,
   y: 890,
   r: 5.2,
@@ -190,11 +193,11 @@ const NEON_CARS = [
 ];
 
 const NEON_BUILDINGS = [
-  { x: 118, y: 836, w: 72, h: 72, seed: 1, accent: "#22e6ff", sign: "SYN", roofBounce: 320 },
-  { x: 228, y: 816, w: 66, h: 112, seed: 2, accent: "#ff2fb3", sign: "NEON", roofBounce: 340 },
-  { x: 329, y: 829, w: 70, h: 86, seed: 3, accent: "#ffe04a", sign: "24H", roofBounce: 320 },
-  { x: 431, y: 810, w: 68, h: 124, seed: 4, accent: "#22e6ff", sign: "DATA", roofBounce: 360 },
-  { x: 541, y: 842, w: 86, h: 60, seed: 5, accent: "#ff2fb3", sign: "BAR", roofBounce: 330 },
+  { x: 148, y: 836, w: 72, h: 72, seed: 1, accent: "#22e6ff", sign: "SYN", roofBounce: 320 },
+  { x: 247, y: 816, w: 66, h: 112, seed: 2, accent: "#ff2fb3", sign: "NEON", roofBounce: 340 },
+  { x: 345, y: 829, w: 70, h: 86, seed: 3, accent: "#ffe04a", sign: "24H", roofBounce: 320 },
+  { x: 445, y: 810, w: 70, h: 124, seed: 4, accent: "#22e6ff", sign: "DATA", roofBounce: 360 },
+  { x: 532, y: 842, w: 44, h: 60, seed: 5, accent: "#ff2fb3", sign: "BAR", roofBounce: 330 },
 ].map((block) => ({
   ...block,
   type: "block",
@@ -287,7 +290,7 @@ const DEFINITIONS = [
     tagline: "温润纸面与黄铜钉阵，街机厅最熟悉的一台机器。",
     description: "对称 10/9 交错钉阵，落点完全由重力与碰撞决定。",
     price: 0,
-    currency: "coins",
+    currency: "tickets",
     art: "classic",
     features: ["对称钉阵", "黄铜回球坡道", "纯物理落点"],
     palette: {
@@ -310,8 +313,8 @@ const DEFINITIONS = [
     tagline: "雨夜高架、飞行汽车与跳动的霓虹分流钉。",
     description:
       "顶层是闪烁的霓虹分流钉，中层两列飞行汽车循环穿梭，底层是参差的摩天楼群。",
-    price: 80,
-    currency: "coins",
+    price: 16,
+    currency: "tickets",
     art: "cyberpunk",
     features: ["霓虹分流钉", "飞行汽车 ×4", "摩天楼群"],
     palette: {
@@ -335,8 +338,8 @@ const DEFINITIONS = [
     tagline: "主动与被动转子、弹射桩和一对相连的传送门。",
     description:
       "两台常转的霓虹转子切开落点，中央是被动转子。弹射桩提供额外回弹，传送门把左右两侧连成闭环。",
-    price: 120,
-    currency: "coins",
+    price: 24,
+    currency: "tickets",
     art: "cyberpunk",
     variant: "lab",
     features: ["主动 / 被动转子", "弹射桩", "传送门"],

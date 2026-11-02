@@ -271,8 +271,8 @@ class Account {
   }
 
   /**
-   * Buy a table with arcade coins. New tables are equipped immediately so the
-   * shop can hand the player straight back to the new machine.
+   * Buy a table with tickets and equip it immediately. Tickets are the only
+   * cosmetic / machine unlock currency; coins are reserved for buying marbles.
    */
   purchaseTable(id, price = 0) {
     if (!isTableId(id)) return { ok: false, reason: "invalid" };
@@ -280,8 +280,8 @@ class Account {
       return { ok: true, alreadyOwned: true, equipped: this.equipTable(id) };
     }
     const cost = clampInt(price, 0, 9_999_999);
-    if (this.state.coins < cost) return { ok: false, reason: "coins" };
-    this.state.coins -= cost;
+    if (this.state.tickets < cost) return { ok: false, reason: "tickets" };
+    this.state.tickets -= cost;
     this.state.tables.owned.push(id);
     this.state.tables.equipped = id;
     this.#changed();
