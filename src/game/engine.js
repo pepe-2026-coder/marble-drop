@@ -34,6 +34,7 @@ import {
   easeInCubic,
   easeInOutCubic,
 } from "./utils.js";
+import { PayoutAnimation } from "./payout.js";
 
 /* ── DOM ─────────────────────────────────────────────────── */
 
@@ -409,6 +410,13 @@ const ball = {
   spin: 0,
   stallTime: 0,
 };
+
+/* Payout tray animation. It owns its own tiny physics world and draws
+   straight onto the board canvas above the regular scene. */
+const payoutFx = new PayoutAnimation({
+  getCtx: () => mainCtx,
+  getScale: () => canvasScale,
+});
 
 /* ── World geometry ──────────────────────────────────────── */
 
@@ -1488,6 +1496,7 @@ function startRound() {
   }
 
   clearScheduled();
+  payoutFx.stop();
   if (game.chargeMode === "keyboard") game.chargeMode = null;
   game.charging = false;
   game.charge = 0;
@@ -1717,12 +1726,36 @@ function resolveLanding() {
 
   spawnSlotBurst(ball.x, 982, won);
   if (won) {
-    if (tickets > 0) spawnTicketBurst();
     audio.win(game.multiplier >= 8);
     vibrate([18, 40, 25]);
   } else {
     vibrate(18);
     window.setTimeout(() => audio.lose(), 160);
+  }
+
+  hideHint();
+
+  // Winning can play a full payout-tray animation first; the result card
+  // waits until every marble has dropped into the tray.
+  const animatePayout = won && payout > 0 && account.settings.payoutAnimation;
+  if (animatePayout) {
+    setRoundBadge("live", "开奖 · 吐珠中");
+    setPlayStatus("中奖！弹珠吐进托盘", `返还 ${payout} 颗`, true);
+    payoutFx.start({
+      total: payout,
+      onComplete: () => {
+        if (!game.result || game.phase === "returning" || game.phase === "idle") return;
+        if (game.result.tickets > 0) spawnTicketBurst();
+        showResultCard(game.result);
+        if (game.result.tickets > 0) {
+          window.setTimeout(() => audio.ticket(), 220);
+        }
+        setRoundBadge("live", "开奖 · 中奖");
+        setPlayStatus("母球即将回收", `返还 ${game.result.payout} 颗`, true);
+        schedule(beginReturn, 2100);
+      },
+    });
+    return;
   }
 
   setRoundBadge("live", won ? "开奖 · 中奖" : "开奖");
@@ -1731,7 +1764,8 @@ function resolveLanding() {
     won ? `返还 ${payout} 颗` : "落入普通槽位",
     true,
   );
-  hideHint();
+
+  if (won && tickets > 0) spawnTicketBurst();
 
   schedule(() => {
     showResultCard(game.result);
@@ -1799,6 +1833,7 @@ function finishReturn() {
   updateToolTrayUI();
   hideBanner();
   hideResultCard();
+  payoutFx.stop();
   setPhase("idle");
   setPowerUI(0, "ready");
   setRoundBadge("ready", "等待投珠");
@@ -3017,6 +3052,10 @@ function draw(now) {
   drawSpring(now);
 
   ctx.restore();
+
+  // The payout tray is an overlay: draw it after releasing the board shake
+  // so the tray itself stays rock steady while it fills.
+  payoutFx.draw(now);
 }
 
 /* ── Update loop ─────────────────────────────────────────── */
@@ -3161,6 +3200,7 @@ function update(now, dt) {
   for (const peg of pegs) peg.glow *= Math.pow(0.02, dt);
   for (const pad of activePads) pad.glow *= Math.pow(0.015, dt);
   for (const magnet of activeMagnets) magnet.pulse *= Math.pow(0.01, dt);
+  payoutFx.update(now, dt);
   updateParticles(dt);
   game.shake *= Math.pow(0.001, dt);
   if (game.shake < 0.003) game.shake = 0;
@@ -3273,6 +3313,12 @@ canvas.addEventListener(
     if (event.button !== undefined && event.button !== 0) return;
     if (event.target !== canvas) return;
     audio.init();
+
+    if (payoutFx.canSkip()) {
+      event.preventDefault();
+      payoutFx.skip();
+      return;
+    }
 
     if (game.phase === "ready") {
       const point = canvasPoint(event);
@@ -3498,6 +3544,11 @@ window.addEventListener("blur", () => {
   }
 });
 
+// Do not leave the pouring rumble running in a background tab.
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) audio.payoutPourStop();
+});
+
 /* ── Debug API (handy for QA, harmless in production) ─────── */
 
 function snapshot() {
@@ -3540,6 +3591,7 @@ function snapshot() {
     litRevealDone: game.litReveal.size
       ? performance.now() >= Math.max(...game.litReveal.values())
       : true,
+    payout: payoutFx.snapshot(),
   };
 }
 
@@ -3665,11 +3717,53 @@ function debugSimulate(count = 100, power = 0.8) {
   };
 }
 
+/** QA helper: play the payout tray animation with an arbitrary count. */
+function debugPayout(total = 120) {
+  audio.init();
+  const count = clamp(Math.round(Number(total) || 0), 1, 990);
+  payoutFx.stop();
+  return payoutFx.start({ total: count, delay: 160 });
+}
+
+/** QA helper: settle the next round into a chosen slot so the win flow
+    (including the payout animation and result card) can be inspected. */
+function debugLanding(slotIndex = 0) {
+  audio.init();
+  const slot = clamp(Math.round(Number(slotIndex) || 0), 0, SLOT.count - 1);
+  const drop = () => {
+    if (game.phase !== "ready") return false;
+    game.litSlots = new Set([slot]);
+    game.litReveal = new Map([[slot, 0]]);
+    game.phase = "flying";
+    game.landingResolved = false;
+    game.leftLane = true;
+    game.flightStartedAt = performance.now();
+    ball.x = SLOT.x0 + (slot + 0.5) * SLOT.width;
+    ball.y = SLOT.sensorY + 2;
+    ball.prevX = ball.x;
+    ball.prevY = ball.y;
+    ball.vx = 0;
+    ball.vy = 240;
+    ball.trail.length = 0;
+    setPhase("flying");
+    setRoundBadge("live", "开奖");
+    setPlayStatus("调试落点", `槽位 ${slot + 1}`, true);
+    return true;
+  };
+  if (game.phase === "ready") return drop();
+  if (game.phase !== "idle") return false;
+  startRound();
+  window.setTimeout(drop, 1900);
+  return true;
+}
+
 window.__MARBLE_DROP__ = {
   snapshot,
   simulate: debugSimulate,
   simulateOne: simulateLaunch,
   trace: debugTrace,
+  payout: debugPayout,
+  landing: debugLanding,
 };
 
 /* ── Init ────────────────────────────────────────────────── */

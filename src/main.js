@@ -36,6 +36,7 @@ const volumeRange = $("volumeRange");
 const volumeValue = $("volumeValue");
 const muteToggle = $("muteToggle");
 const hapticsToggle = $("hapticsToggle");
+const payoutToggle = $("payoutToggle");
 const helpDialog = $("helpDialog");
 
 let currentScreen = "menu";
@@ -99,6 +100,7 @@ function syncAccount(state) {
   volumeValue.textContent = `${volume}%`;
   muteToggle.setAttribute("aria-pressed", String(state.settings.muted));
   hapticsToggle.setAttribute("aria-pressed", String(state.settings.haptics));
+  payoutToggle.setAttribute("aria-pressed", String(state.settings.payoutAnimation));
 }
 
 account.subscribe(syncAccount);
@@ -246,6 +248,18 @@ hapticsToggle.addEventListener("click", () => {
     toast("触感反馈已开启");
   } else {
     toast("触感反馈已关闭");
+  }
+});
+
+payoutToggle.addEventListener("click", () => {
+  account.setPayoutAnimation(!account.settings.payoutAnimation);
+  audio.init();
+  audio.click();
+  if (account.settings.payoutAnimation) {
+    vibrate(12);
+    toast("中奖吐珠动画已开启");
+  } else {
+    toast("中奖吐珠动画已关闭");
   }
 });
 

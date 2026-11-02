@@ -29,6 +29,7 @@ function createDefaultAccount() {
       volume: 0.65,
       muted: false,
       haptics: true,
+      payoutAnimation: true,
     },
     stats: {
       rounds: 0,
@@ -50,6 +51,7 @@ function normalize(raw) {
       volume: clampFloat(raw.settings?.volume, 0, 1, base.settings.volume),
       muted: raw.settings?.muted === true,
       haptics: raw.settings?.haptics !== false,
+      payoutAnimation: raw.settings?.payoutAnimation !== false,
     },
     stats: {
       rounds: clampInt(raw.stats?.rounds, 0, 99_999_999),
@@ -231,6 +233,13 @@ class Account {
     const next = Boolean(enabled);
     if (next === this.state.settings.haptics) return;
     this.state.settings.haptics = next;
+    this.#changed();
+  }
+
+  setPayoutAnimation(enabled) {
+    const next = Boolean(enabled);
+    if (next === this.state.settings.payoutAnimation) return;
+    this.state.settings.payoutAnimation = next;
     this.#changed();
   }
 

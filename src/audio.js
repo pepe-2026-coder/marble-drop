@@ -15,6 +15,8 @@ class SoundEngine {
     this.noiseBuffer = null;
     this.lastPegAt = 0;
     this.lastWallAt = 0;
+    this.lastMarbleAt = 0;
+    this.pour = null;
     this.volume = account.settings.volume;
     this.muted = account.settings.muted;
   }
@@ -57,6 +59,7 @@ class SoundEngine {
       this.master.gain.cancelScheduledValues(now);
       this.master.gain.setTargetAtTime(this.#gain(), now, 0.02);
     }
+    if (this.muted) this.payoutPourStop();
   }
 
   setVolume(value) {
@@ -164,6 +167,70 @@ class SoundEngine {
     [659.25, 783.99, 1046.5].forEach((freq, i) =>
       this.tone(freq, 0.22, "triangle", 0.05, null, i * 0.075),
     );
+  }
+
+  /* ── Payout tray: mechanical chute, pouring rumble, marble clinks ── */
+
+  payoutOpen() {
+    this.noise(0.16, 0.03, 560);
+    this.tone(150, 0.2, "square", 0.024, 88);
+    this.tone(784, 0.16, "sine", 0.032, 1046.5, 0.06);
+  }
+
+  payoutPourStart() {
+    if (!this.#enabled() || this.pour) return;
+    const t = this.ctx.currentTime;
+    const source = this.ctx.createBufferSource();
+    source.buffer = this.noiseBuffer;
+    source.loop = true;
+    source.playbackRate.value = 1.25;
+    const filter = this.ctx.createBiquadFilter();
+    filter.type = "bandpass";
+    filter.frequency.value = 1050;
+    filter.Q.value = 0.55;
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(0.026, t + 0.16);
+    source.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.master);
+    source.start(t);
+    this.pour = { source, gain };
+  }
+
+  payoutPourStop() {
+    if (!this.pour || !this.ctx) return;
+    const { source, gain } = this.pour;
+    this.pour = null;
+    const t = this.ctx.currentTime;
+    const level = Math.max(0.0001, Number(gain.gain.value) || 0.0001);
+    gain.gain.cancelScheduledValues(t);
+    gain.gain.setValueAtTime(level, t);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t + 0.24);
+    try {
+      source.stop(t + 0.3);
+    } catch {
+      /* already stopped */
+    }
+  }
+
+  /** A single glass-marble knock while the tray is filling. */
+  marbleHit(intensity = 0.5) {
+    if (!this.ctx) return;
+    const now = this.ctx.currentTime;
+    if (now - this.lastMarbleAt < 0.021) return;
+    this.lastMarbleAt = now;
+    const level = clamp(intensity, 0, 1);
+    const freq = randomRange(1150, 2380);
+    this.tone(freq, 0.05, "triangle", 0.006 + level * 0.022, freq * 0.6);
+    this.noise(0.026, 0.0035 + level * 0.008, 3400);
+  }
+
+  payoutFinish() {
+    [783.99, 1046.5, 1318.51].forEach((freq, i) =>
+      this.tone(freq, 0.24, "sine", 0.045, freq * 1.004, i * 0.065),
+    );
+    this.noise(0.12, 0.018, 2600);
   }
 
   click() {
