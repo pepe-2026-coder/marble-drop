@@ -87,6 +87,10 @@ const bannerMult = document.getElementById("bannerMult");
 const bannerSlots = document.getElementById("bannerSlots");
 const hintBubble = document.getElementById("hintBubble");
 const hintText = document.getElementById("hintText");
+const wheelCallout = document.getElementById("wheelCallout");
+const wheelCalloutKicker = document.getElementById("wheelCalloutKicker");
+const wheelCalloutTitle = document.getElementById("wheelCalloutTitle");
+const wheelCalloutTicket = document.getElementById("wheelCalloutTicket");
 const resultCard = document.getElementById("resultCard");
 const resultEyebrow = document.getElementById("resultEyebrow");
 const resultTitle = document.getElementById("resultTitle");
@@ -325,6 +329,26 @@ const game = {
   bannerTimer: null,
   hintTimer: null,
   toastTimer: null,
+  wheel: {
+    active: false,
+    spinning: false,
+    sectorIndex: -1,
+    outcome: null,
+    calloutTimer: null,
+  },
+  wheelTickets: 0,
+  wheelSpins: 0,
+  mainPayout: 0,
+  mainTickets: 0,
+  mainSlot: null,
+  mainWon: false,
+  mainDestroyed: false,
+  mainResolved: false,
+  bonusPayout: 0,
+  bonusTickets: 0,
+  bonusBallsScored: 0,
+  landingFlowStarted: false,
+  forceBonusLandingAt: 0,
 };
 
 const ball = {
@@ -339,7 +363,12 @@ const ball = {
   trailClock: 0,
   spin: 0,
   stallTime: 0,
+  hidden: false,
 };
+
+/* Temporary extra marbles produced by the abyss wheel. They score on their
+   own slot landing and then disappear without ending the main round. */
+const bonusBalls = [];
 
 /* Payout tray animation. It owns its own tiny physics world and draws
    straight onto the board canvas above the regular scene. */
@@ -496,6 +525,7 @@ function applyTable(id, announce = false) {
   game.placingTool = null;
   game.toolAvailable = { magnet: 0, pad: 0 };
   game.toolPlaced = { magnet: 0, pad: 0 };
+  resetAbyssRound();
 
   rebuildStaticLayer();
   setPhase("idle");
@@ -708,7 +738,7 @@ function stepBallPhysics(b, dt) {
       if (collidePad(b, activePads[i])) touched = true;
     }
     if (obstacles.length) {
-      const events = collideObstacles(b, obstacles);
+      const events = collideObstacles(b, obstacles, { ignoreWheel: Boolean(b.ignoreWheel) });
       if (events.length) {
         touched = true;
         obstacleEvents.push(...events);
@@ -1383,6 +1413,10 @@ function handleObstacleEvents(events) {
       vibrate(10);
       continue;
     }
+    if (event.kind === "wheel") {
+      startAbyssWheel(event);
+      continue;
+    }
     if (event.kind === "portal") {
       audio.tone(540, 0.16, "sine", 0.045, 980);
       audio.noise(0.12, 0.025, 2400);
@@ -1563,26 +1597,52 @@ function hideHint() {
 function showResultCard(result) {
   if (!result) return;
   resultCard.setAttribute("aria-hidden", "false");
-  const { won, payout, tickets, slotIndex } = result;
+  const { won, payout, tickets, slotIndex, destroyed } = result;
+  const wheelTickets = Number(result.wheelTickets) || 0;
+  const wheelSpins = Number(result.wheelSpins) || 0;
+  const bonusPayout = Number(result.bonusPayout) || 0;
+  const spinNote = wheelSpins > 0 ? ` · 轮盘 ${wheelSpins} 次` : "";
   resultCard.classList.toggle("is-loss", !won);
-  if (won) {
+  resultCard.classList.toggle("is-destroyed", Boolean(destroyed));
+
+  if (destroyed) {
+    resultEyebrow.textContent = "ABYSS CLAIMED";
+    resultTitle.textContent = "深渊吞噬";
+    resultPayout.textContent =
+      payout > 0 ? `追加球返还 +${payout} 颗 · 彩票 +${tickets}` : "母球与投入一起沉入深渊";
+    resultFoot.textContent = `赌桌重新铺开，下一局即将开始…${spinNote}`;
+  } else if (won) {
     resultEyebrow.textContent = tickets > 0 ? "LUCKY WIN + TICKET" : "LUCKY WIN";
     resultTitle.textContent = `中奖 ×${game.multiplier}`;
-    resultPayout.textContent = `+${payout} 颗弹珠`;
-    resultTicket.textContent =
-      tickets > 0
-        ? `获得 ${tickets} 张彩票`
-        : payout >= 30
-          ? ""
-          : `每满 30 颗返还可得 1 张彩票`;
-    resultFoot.textContent = "母球即将沿回球坡道返回限位器…";
+    resultPayout.textContent =
+      bonusPayout > 0
+        ? `+${payout} 颗弹珠 · 含追加球 +${bonusPayout}`
+        : `+${payout} 颗弹珠`;
+    resultFoot.textContent = `母球即将沿回球坡道返回限位器…${spinNote}`;
   } else {
     resultEyebrow.textContent = "RESULT";
     resultTitle.textContent = "未中奖";
-    resultPayout.textContent = `${slotIndex + 1} 号槽 · 差一点`;
-    resultTicket.textContent = "";
-    resultFoot.textContent = "母球即将沿回球坡道返回限位器…";
+    resultPayout.textContent =
+      slotIndex === null || slotIndex === undefined
+        ? "这一球被深渊收走"
+        : `${slotIndex + 1} 号槽 · 差一点`;
+    resultFoot.textContent = `母球即将沿回球坡道返回限位器…${spinNote}`;
   }
+
+  const ticketParts = [];
+  if (tickets > 0) ticketParts.push(`返还彩票 +${tickets}`);
+  if (wheelTickets !== 0) {
+    ticketParts.push(`轮盘彩票 ${wheelTickets > 0 ? "+" : ""}${wheelTickets}`);
+  }
+  if (!ticketParts.length) {
+    if (!won && !destroyed) {
+      ticketParts.push("每满 30 颗返还可得 1 张彩票");
+    } else if (destroyed) {
+      ticketParts.push("轮盘彩票 ±0");
+    }
+  }
+  resultTicket.textContent = ticketParts.join(" · ");
+
   resultProgress.hidden = true;
   resultProgress.textContent = "";
   resultCard.classList.add("is-visible");
@@ -1605,6 +1665,56 @@ function schedule(fn, delay) {
 function clearScheduled() {
   (game.timers || []).forEach((timer) => window.clearTimeout(timer));
   game.timers = [];
+}
+
+/* ── Abyss wheel presentation ────────────────────────────── */
+
+function setWheelCalloutTone(tone) {
+  wheelCallout.classList.remove("is-spin", "is-positive", "is-negative", "is-danger");
+  if (tone) wheelCallout.classList.add(`is-${tone}`);
+}
+
+function showWheelCallout(kicker, title, ticket, tone = "spin", hold = 0) {
+  window.clearTimeout(game.wheel.calloutTimer);
+  wheelCalloutKicker.textContent = kicker;
+  wheelCalloutTitle.textContent = title;
+  wheelCalloutTicket.textContent = ticket || "";
+  setWheelCalloutTone(tone);
+  wheelCallout.setAttribute("aria-hidden", "false");
+  wheelCallout.classList.add("is-visible");
+  if (hold > 0) {
+    game.wheel.calloutTimer = window.setTimeout(() => hideWheelCallout(), hold);
+  }
+}
+
+function hideWheelCallout() {
+  window.clearTimeout(game.wheel.calloutTimer);
+  game.wheel.calloutTimer = null;
+  wheelCallout.classList.remove("is-visible");
+  wheelCallout.setAttribute("aria-hidden", "true");
+}
+
+function resetAbyssRound() {
+  hideWheelCallout();
+  bonusBalls.length = 0;
+  game.wheel.active = false;
+  game.wheel.spinning = false;
+  game.wheel.sectorIndex = -1;
+  game.wheel.outcome = null;
+  game.wheelTickets = 0;
+  game.wheelSpins = 0;
+  game.mainPayout = 0;
+  game.mainTickets = 0;
+  game.mainSlot = null;
+  game.mainWon = false;
+  game.mainDestroyed = false;
+  game.mainResolved = false;
+  game.bonusPayout = 0;
+  game.bonusTickets = 0;
+  game.bonusBallsScored = 0;
+  game.landingFlowStarted = false;
+  game.forceBonusLandingAt = 0;
+  ball.hidden = false;
 }
 
 function startRound() {
@@ -1637,6 +1747,7 @@ function startRound() {
   game.drop = null;
   game.returnAnim = null;
   game.returnPos = null;
+  resetAbyssRound();
   resetObstacles(obstacles);
   randomizeObstacles(obstacles);
   particles.length = 0;
@@ -1833,17 +1944,471 @@ function launchBall(power) {
   vibrate(14);
 }
 
+
+/* ── Abyss wheel: spin, wager, bonus marble ──────────────── */
+
+function findWheelObstacle(wheelId = null) {
+  return (
+    obstacles.find((obstacle) => obstacle.type === "wheel" && obstacle.id === wheelId) ||
+    obstacles.find((obstacle) => obstacle.type === "wheel") ||
+    null
+  );
+}
+
+function applyWheelTicket(delta) {
+  const amount = Number(delta) || 0;
+  if (!amount) return 0;
+  const before = game.tickets;
+  const next = Math.max(0, before + amount);
+  if (next !== before) setTickets(next, true);
+  game.wheelTickets += next - before;
+  return next - before;
+}
+
+function formatTicketDelta(value) {
+  if (value > 0) return `彩票 +${value}`;
+  if (value < 0) return `彩票 ${value}`;
+  return "彩票 ±0";
+}
+
+function syncMultiplierUI() {
+  playMult.textContent = `×${game.multiplier}`;
+  playMult.classList.remove("is-bumping");
+  // Force a clean reflow so the brief numeric pulse replays on every spin.
+  void playMult.offsetWidth;
+  playMult.classList.add("is-bumping");
+  window.setTimeout(() => playMult.classList.remove("is-bumping"), 460);
+}
+
+function startAbyssWheel(event, forcedSectorIndex = null) {
+  if (activeTable.id !== "abyss" || game.wheel.active || game.landingResolved) return;
+  const wheel = findWheelObstacle(event.wheelId);
+  if (!wheel || !wheel.sectors || wheel.spinning) return;
+
+  const count = wheel.sectors.length;
+  const sectorIndex = Number.isInteger(forcedSectorIndex)
+    ? clamp(forcedSectorIndex, 0, count - 1)
+    : Math.floor(Math.random() * count);
+  const step = TAU / count;
+  const sectorCenter = -Math.PI / 2 + sectorIndex * step;
+  const current = wheel.pointerAngle;
+  let target = sectorCenter + TAU * (4 + Math.floor(Math.random() * 2));
+  while (target < current + TAU * 3.2) target += TAU;
+
+  game.wheel.active = true;
+  game.wheel.spinning = true;
+  game.wheel.sectorIndex = sectorIndex;
+  game.wheel.outcome = null;
+  game.wheelSpins += 1;
+
+  wheel.resultIndex = sectorIndex;
+  wheel.resultGlow = 0;
+  wheel.spinFrom = current;
+  wheel.spinTo = target;
+  wheel.spinStartedAt = performance.now();
+  wheel.spinDuration = 1900 + Math.floor(Math.random() * 320);
+  wheel.spinning = true;
+  wheel.flash = 0.7;
+
+  ball.hidden = true;
+  ball.vx = 0;
+  ball.vy = 0;
+  ball.trail.length = 0;
+  ball.stallTime = 0;
+  game.flightStartedAt = performance.now();
+  hideHint();
+
+  showWheelCallout("ABYSS WHEEL", "命运转动中…", "彩票 +1 / -1", "spin");
+  setRoundBadge("live", "深渊轮盘 · 转动中");
+  setPlayStatus("母球被转盘吞没", "十二格命运指针旋转中", true);
+  audio.tone(196, 0.35, "sawtooth", 0.04, 98);
+  audio.noise(0.22, 0.026, 900);
+  vibrate([12, 40, 12]);
+  spawnPortalBurst(wheel.x, wheel.y, activeTable.palette.secondary);
+  game.shake = Math.min(1.4, game.shake + 0.2);
+
+  schedule(() => resolveAbyssWheel(wheel), wheel.spinDuration + 620);
+}
+
+function resolveAbyssWheel(wheel) {
+  if (!game.wheel.active || !wheel || game.result) return;
+  wheel.spinning = false;
+  game.wheel.spinning = false;
+  wheel.pointerAngle = wheel.spinTo;
+  wheel.resultGlow = 1;
+  wheel.flash = 1;
+
+  const sector = wheel.sectors[game.wheel.sectorIndex] || {};
+  const kind = sector.kind || "boost";
+  const ticketChange = applyWheelTicket(sector.ticket);
+  const ticketText = formatTicketDelta(ticketChange);
+  game.wheel.outcome = kind;
+
+  if (kind === "boost") {
+    const previous = game.multiplier;
+    game.multiplier = clamp(game.multiplier + 1, 1, 20);
+    syncMultiplierUI();
+    const title = game.multiplier > previous ? "倍率 +1" : "倍率已封顶";
+    showWheelCallout("深渊轮盘 · 加注", title, ticketText, "positive", 1700);
+    setRoundBadge("live", "深渊加注");
+    setPlayStatus(`轮盘 ${title}`, `当前倍率 ×${game.multiplier} · ${ticketText}`, true);
+    audio.tone(392, 0.22, "triangle", 0.06, 784);
+    audio.tone(587, 0.3, "sine", 0.045, 1174, 110);
+    vibrate([10, 30, 16]);
+  } else if (kind === "lose") {
+    const previous = game.multiplier;
+    game.multiplier = clamp(game.multiplier - 1, 1, 20);
+    syncMultiplierUI();
+    const title = game.multiplier < previous ? "倍率 -1" : "倍率已见底";
+    showWheelCallout("深渊轮盘 · 抽水", title, ticketText, "negative", 1700);
+    setRoundBadge("live", "庄家抽水");
+    setPlayStatus(`轮盘 ${title}`, `当前倍率 ×${game.multiplier} · ${ticketText}`, true);
+    audio.tone(220, 0.3, "sawtooth", 0.045, 110);
+    vibrate(24);
+  } else if (kind === "add") {
+    showWheelCallout("深渊轮盘 · 再赌一球", "追加一球", ticketText, "positive", 1900);
+    setRoundBadge("live", "追加赌球");
+    setPlayStatus("额外赌球入局", "它会独立落入奖槽、结算后消失", true);
+    spawnBonusMarble(wheel);
+    audio.tone(523, 0.18, "square", 0.045, 784);
+    audio.tone(659, 0.24, "sine", 0.04, 988, 100);
+    vibrate([12, 26, 12, 26]);
+  } else {
+    game.mainDestroyed = true;
+    showWheelCallout("深渊轮盘 · 终局", "深渊吞噬", ticketText, "danger", 2400);
+    setRoundBadge("live", "深渊吞噬");
+    setPlayStatus("指针停在吞噬格", "母球被深渊收走", true);
+    audio.tone(110, 0.7, "sawtooth", 0.06, 44);
+    audio.noise(0.5, 0.045, 420);
+    game.shake = Math.min(2, game.shake + 0.8);
+    vibrate([25, 50, 45]);
+    spawnPortalBurst(wheel.x, wheel.y, activeTable.palette.primary);
+    spawnNeonBurst(wheel.x, wheel.y, "#070204", 28, 1.6);
+    schedule(() => finalizeDestroyedMain(wheel), 1050);
+    return;
+  }
+
+  schedule(() => relaunchFromWheel(wheel, sector), 1350);
+}
+
+function relaunchFromWheel(wheel, sector) {
+  if (!game.wheel.active || game.landingResolved) {
+    game.wheel.active = false;
+    return;
+  }
+  game.wheel.active = false;
+  game.wheel.spinning = false;
+  ball.hidden = false;
+  ball.x = wheel.x;
+  ball.y = wheel.y;
+  ball.prevX = wheel.x;
+  ball.prevY = wheel.y;
+  const angle = randomRange(0, TAU);
+  const speed = randomRange(760, 1040);
+  ball.vx = Math.cos(angle) * speed;
+  ball.vy = Math.sin(angle) * speed;
+  ball.trail.length = 0;
+  ball.stallTime = 0;
+  ball.spin = 0;
+  game.flightStartedAt = performance.now();
+  wheel.armed = false;
+  wheel.cooldown = 1.65;
+
+  setRoundBadge("live", "轮盘 · 随机发射");
+  setPlayStatus(
+    `轮盘出射 · ${sector.label || "命运"}`,
+    `从轮心以 ${Math.round((angle * 180) / Math.PI)}° 射出`,
+    true,
+  );
+  spawnNeonBurst(wheel.x, wheel.y, activeTable.palette.secondary, 16, 1.4);
+  audio.tone(330, 0.16, "sine", 0.05, 660);
+  audio.launch(0.55);
+  game.shake = Math.min(1.6, game.shake + 0.3);
+  vibrate(16);
+  schedule(hideWheelCallout, 1050);
+}
+
+function spawnBonusMarble(wheel) {
+  if (bonusBalls.length >= 4) return false;
+  const angle = randomRange(Math.PI * 0.16, Math.PI * 0.84);
+  const speed = randomRange(520, 760);
+  bonusBalls.push({
+    bonus: true,
+    ignoreWheel: true,
+    x: wheel.x,
+    y: wheel.y,
+    prevX: wheel.x,
+    prevY: wheel.y,
+    vx: Math.cos(angle) * speed,
+    vy: Math.sin(angle) * speed,
+    r: 8,
+    spin: 0,
+    stallTime: 0,
+    born: performance.now(),
+    trail: [],
+    silent: false,
+  });
+  spawnNeonBurst(wheel.x, wheel.y, activeTable.palette.tertiary, 20, 1.5);
+  spawnNeonBurst(wheel.x, wheel.y, activeTable.palette.secondary, 12, 1.1);
+  game.shake = Math.min(1.6, game.shake + 0.25);
+  audio.tone(880, 0.1, "square", 0.04, 1320);
+  return true;
+}
+
+function resolveBonusLanding(bonusBall, forced = false) {
+  if (!bonusBall || bonusBall.scored) return;
+  bonusBall.scored = true;
+  const index = getSlotIndex(clamp(bonusBall.x, SLOT.x0 + 4, SLOT.x1 - 4));
+  const won = game.litSlots.has(index);
+  const payout = won ? game.bet * game.multiplier : 0;
+  const tickets = Math.floor(payout / 30);
+  game.bonusPayout += payout;
+  game.bonusTickets += tickets;
+  game.bonusBallsScored += 1;
+
+  if (payout > 0) {
+    setMarbles(game.marbles + payout, true);
+    if (tickets > 0) setTickets(game.tickets + tickets, true);
+    spawnSlotBurst(bonusBall.x, 982, true);
+    spawnTicketBurstIfNeeded(tickets);
+    audio.win(false);
+    setPlayStatus("追加球命中奖槽", `额外返还 ${payout} 颗弹珠`, true);
+  } else {
+    spawnSlotBurst(bonusBall.x, 982, false);
+    audio.peg(0.5);
+    setPlayStatus("追加球落入普通槽", forced ? "追加球燃尽消失" : "追加球结算后销毁", true);
+  }
+  const removeAt = bonusBalls.indexOf(bonusBall);
+  if (removeAt >= 0) bonusBalls.splice(removeAt, 1);
+  if (game.mainResolved) finishLandingWhenReady();
+}
+
+function spawnTicketBurstIfNeeded(tickets) {
+  if (tickets > 0) spawnTicketBurst();
+}
+
+function updateBonusBalls(now, dt) {
+  if (!bonusBalls.length) return;
+  for (let index = bonusBalls.length - 1; index >= 0; index -= 1) {
+    const b = bonusBalls[index];
+    if (!b) continue;
+    let remaining = Math.min(dt, 0.033);
+    let guard = 0;
+    let landed = false;
+    while (remaining > 0 && guard < 12) {
+      const step = Math.min(PHYS_STEP, remaining);
+      stepBallPhysics(b, step);
+      remaining -= step;
+      guard += 1;
+      if (b.x < MAIN_RIGHT && b.y > SLOT.sensorY) {
+        resolveBonusLanding(b);
+        landed = true;
+        break;
+      }
+      if (b.x > MAIN_RIGHT && b.y > 1040) {
+        landed = true;
+        break;
+      }
+      if (!game.landingResolved) {
+        const speed = Math.hypot(b.vx, b.vy);
+        if (speed < 18) b.stallTime += step;
+        else b.stallTime = 0;
+        if (b.stallTime > 1.1) {
+          b.vx += randomRange(-120, 120);
+          b.vy -= 150;
+          if (b.x < INNER.left + 26) b.vx += 190;
+          else if (b.x > MAIN_RIGHT - 26) b.vx -= 190;
+          b.stallTime = 0;
+        }
+      }
+    }
+    if (landed) {
+      const removeAt = bonusBalls.indexOf(b);
+      if (removeAt >= 0) bonusBalls.splice(removeAt, 1);
+      if (game.mainResolved) finishLandingWhenReady();
+      continue;
+    }
+    b.spin += (b.vx / b.r) * dt * 0.12;
+    b.trail.push({ x: b.x, y: b.y, time: now });
+    if (b.trail.length > 16) b.trail.shift();
+    if (now - b.born > 5600) {
+      b.x = clamp(b.x, SLOT.x0 + 8, SLOT.x1 - 8);
+      resolveBonusLanding(b, true);
+    }
+  }
+
+  if (
+    game.mainResolved &&
+    !game.landingFlowStarted &&
+    bonusBalls.length &&
+    game.forceBonusLandingAt &&
+    now >= game.forceBonusLandingAt
+  ) {
+    forceBonusLandings();
+  }
+}
+
+function forceBonusLandings() {
+  if (!bonusBalls.length) return;
+  const pending = bonusBalls.slice();
+  for (const b of pending) {
+    b.x = clamp(b.x, SLOT.x0 + 8, SLOT.x1 - 8);
+    b.y = SLOT.sensorY + 4;
+    resolveBonusLanding(b, true);
+  }
+}
+
+function finalizeDestroyedMain(wheel) {
+  if (game.mainResolved) return;
+  game.wheel.active = false;
+  game.wheel.spinning = false;
+  ball.hidden = true;
+  ball.vx = 0;
+  ball.vy = 0;
+  ball.trail.length = 0;
+  game.mainResolved = true;
+  game.landingResolved = true;
+  game.mainDestroyed = true;
+  game.mainWon = false;
+  game.mainPayout = 0;
+  game.mainTickets = 0;
+  game.mainSlot = null;
+  game.lastSlot = null;
+  game.flashSlot = null;
+  account.recordRound(false);
+  setRoundBadge("live", "深渊 · 终局");
+  setPlayStatus("母球被深渊吞噬", "本球终结", true);
+  audio.lose();
+  game.shake = Math.min(2, game.shake + 0.7);
+  spawnPortalBurst(wheel.x, wheel.y, activeTable.palette.primary);
+  if (bonusBalls.length) {
+    game.forceBonusLandingAt = performance.now() + 1500;
+    setRoundBadge("live", "追加球结算中");
+    setPlayStatus("深渊吞噬母球", "追加赌球仍在结算", true);
+  }
+  finishLandingWhenReady();
+}
+
+function finishLandingWhenReady() {
+  if (!game.mainResolved || game.landingFlowStarted) return;
+  if (bonusBalls.length) {
+    if (!game.forceBonusLandingAt) {
+      game.forceBonusLandingAt = performance.now() + 1800;
+    }
+    return;
+  }
+  game.landingFlowStarted = true;
+  presentLandingResult();
+}
+
+function buildRoundResult() {
+  const payout = game.mainPayout + game.bonusPayout;
+  const tickets = game.mainTickets + game.bonusTickets;
+  return {
+    won: payout > 0,
+    payout,
+    tickets,
+    slotIndex: game.mainSlot ?? getSlotIndex(clamp(ball.x, SLOT.x0 + 1, SLOT.x1 - 1)),
+    destroyed: game.mainDestroyed,
+    wheelTickets: game.wheelTickets,
+    wheelSpins: game.wheelSpins,
+    mainPayout: game.mainPayout,
+    bonusPayout: game.bonusPayout,
+    bonusBalls: game.bonusBallsScored,
+  };
+}
+
+function presentLandingResult() {
+  if (game.result) return;
+  const result = buildRoundResult();
+  game.result = result;
+  const won = result.won;
+
+  if (result.destroyed) {
+    setRoundBadge("live", "开奖 · 深渊吞噬");
+    setPlayStatus(
+      "深渊吞噬了母球",
+      result.bonusPayout > 0 ? `追加球仍返还 ${result.bonusPayout} 颗` : "本局投入被收走",
+      true,
+    );
+  } else if (won) {
+    setRoundBadge("live", "开奖 · 中奖");
+    setPlayStatus("中奖！母球正在回收", `返还 ${result.payout} 颗`, true);
+  } else {
+    setRoundBadge("live", "开奖");
+    setPlayStatus("未中奖 · 母球正在回收", "落入普通槽位", true);
+  }
+
+  if (won && result.tickets > 0) spawnTicketBurst();
+
+  const animatePayout = won && result.payout > 0 && account.settings.payoutAnimation;
+  if (animatePayout) {
+    setRoundBadge("live", "开奖 · 吐珠中");
+    setPlayStatus("中奖！弹珠吐进托盘", `返还 ${result.payout} 颗`, true);
+    payoutFx.start({
+      total: result.payout,
+      onComplete: () => {
+        if (!game.result || game.phase === "returning" || game.phase === "idle") return;
+        if (game.result.tickets > 0) spawnTicketBurst();
+        showResultCard(game.result);
+        if (game.result.tickets > 0) {
+          window.setTimeout(() => audio.ticket(), 220);
+        }
+        setRoundBadge("live", game.result.destroyed ? "深渊 · 终局" : "开奖 · 中奖");
+        setPlayStatus(
+          game.result.destroyed ? "深渊收起赌桌" : "母球即将回收",
+          game.result.destroyed ? `轮盘吞噬 · 彩票 ${game.result.wheelTickets >= 0 ? "+" : ""}${game.result.wheelTickets}` : `返还 ${game.result.payout} 颗`,
+          true,
+        );
+        schedule(() => endResolvedRound(game.result), 2350);
+      },
+    });
+    return;
+  }
+
+  schedule(() => {
+    showResultCard(game.result);
+    if (won && game.result.tickets > 0) {
+      window.setTimeout(() => audio.ticket(), 220);
+    }
+  }, 420);
+  schedule(() => endResolvedRound(game.result), result.destroyed ? 2950 : 2650);
+}
+
+function endResolvedRound(result) {
+  if (!result) return;
+  if (result.destroyed) {
+    if (game.phase === "returning" || game.phase === "idle") return;
+    game.phase = "returning";
+    game.returnAnim = null;
+    game.returnPos = null;
+    ball.hidden = true;
+    setPhase("returning");
+    setRoundBadge("live", "深渊 · 收场");
+    setPlayStatus("深渊收起赌桌", "下一局即将开始", false);
+    schedule(finishReturn, 1300);
+    return;
+  }
+  beginReturn();
+}
+
 function resolveLanding() {
-  if (game.landingResolved || game.result) return;
+  if (game.landingResolved || game.mainResolved) return;
+  if (game.wheel.active) return;
   const index = getSlotIndex(ball.x);
   const won = game.litSlots.has(index);
   const payout = won ? game.bet * game.multiplier : 0;
   const tickets = Math.floor(payout / 30);
   game.landingResolved = true;
+  game.mainResolved = true;
+  game.mainDestroyed = false;
+  game.mainWon = won;
+  game.mainPayout = payout;
+  game.mainTickets = tickets;
+  game.mainSlot = index;
   game.lastSlot = index;
   game.flashSlot = index;
   game.flashAt = performance.now();
-  game.result = { won, payout, tickets, slotIndex: index };
 
   if (payout > 0) {
     setMarbles(game.marbles + payout, true);
@@ -1861,47 +2426,33 @@ function resolveLanding() {
   }
 
   hideHint();
-
-  // Winning can play a full payout-tray animation first; the result card
-  // waits until every marble has dropped into the tray.
-  const animatePayout = won && payout > 0 && account.settings.payoutAnimation;
-  if (animatePayout) {
-    setRoundBadge("live", "开奖 · 吐珠中");
-    setPlayStatus("中奖！弹珠吐进托盘", `返还 ${payout} 颗`, true);
-    payoutFx.start({
-      total: payout,
-      onComplete: () => {
-        if (!game.result || game.phase === "returning" || game.phase === "idle") return;
-        if (game.result.tickets > 0) spawnTicketBurst();
-        showResultCard(game.result);
-        if (game.result.tickets > 0) {
-          window.setTimeout(() => audio.ticket(), 220);
-        }
-        setRoundBadge("live", "开奖 · 中奖");
-        setPlayStatus("母球即将回收", `返还 ${game.result.payout} 颗`, true);
-        schedule(beginReturn, 2100);
-      },
-    });
-    return;
+  if (bonusBalls.length) {
+    setRoundBadge("live", "追加球结算中");
+    setPlayStatus("母球已入槽", "追加赌球正在各自结算", true);
+    game.forceBonusLandingAt = performance.now() + 1700;
   }
+  finishLandingWhenReady();
+}
 
-  setRoundBadge("live", won ? "开奖 · 中奖" : "开奖");
-  setPlayStatus(
-    won ? "中奖！母球正在回收" : "未中奖 · 母球正在回收",
-    won ? `返还 ${payout} 颗` : "落入普通槽位",
-    true,
-  );
-
-  if (won && tickets > 0) spawnTicketBurst();
-
-  schedule(() => {
-    showResultCard(game.result);
-    if (won && game.result.tickets > 0) {
-      window.setTimeout(() => audio.ticket(), 220);
-    }
-  }, 420);
-
-  schedule(beginReturn, 2650);
+function resolveMissedMain() {
+  if (game.landingResolved || game.mainResolved) return;
+  if (game.wheel.active) return;
+  const index = getSlotIndex(clamp(ball.x, SLOT.x0 + 1, SLOT.x1 - 1));
+  game.landingResolved = true;
+  game.mainResolved = true;
+  game.mainDestroyed = false;
+  game.mainWon = false;
+  game.mainPayout = 0;
+  game.mainTickets = 0;
+  game.mainSlot = index;
+  game.lastSlot = index;
+  game.flashSlot = index;
+  game.flashAt = performance.now();
+  account.recordRound(false);
+  setRoundBadge("live", "开奖");
+  setPlayStatus("母球回到了发射舱", "本局未中奖", true);
+  audio.lose();
+  finishLandingWhenReady();
 }
 
 function beginReturn() {
@@ -1957,6 +2508,7 @@ function finishReturn() {
   game.toolAvailable = { magnet: 0, pad: 0 };
   game.toolPlaced = { magnet: 0, pad: 0 };
   game.toolScore = 0;
+  resetAbyssRound();
   updateToolTrayUI();
   hideBanner();
   hideResultCard();
@@ -3197,7 +3749,67 @@ function drawBallPattern(skin, x, y) {
   ctx.restore();
 }
 
+/** Extra wager marbles are smaller and glow red/gold so they read as a
+    separate, temporary stake rather than the main payout ball. */
+function drawBonusBalls(now) {
+  if (!bonusBalls.length) return;
+  for (const b of bonusBalls) {
+    for (let i = 1; i < b.trail.length; i += 1) {
+      const previous = b.trail[i - 1];
+      const current = b.trail[i];
+      const age = now - current.time;
+      if (age > 220) continue;
+      const alpha = 1 - age / 220;
+      ctx.strokeStyle = `rgba(246, 196, 83, ${alpha * 0.5})`;
+      ctx.lineWidth = 2.4 * alpha;
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(previous.x, previous.y);
+      ctx.lineTo(current.x, current.y);
+      ctx.stroke();
+    }
+
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    const aura = ctx.createRadialGradient(b.x, b.y, 1, b.x, b.y, 24);
+    aura.addColorStop(0, "rgba(246, 196, 83, 0.55)");
+    aura.addColorStop(0.45, "rgba(255, 59, 92, 0.2)");
+    aura.addColorStop(1, "rgba(255, 59, 92, 0)");
+    ctx.fillStyle = aura;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, 24, 0, TAU);
+    ctx.fill();
+    ctx.restore();
+
+    const body = ctx.createRadialGradient(b.x - 2.4, b.y - 3, 0.5, b.x, b.y, b.r * 1.2);
+    body.addColorStop(0, "#fff8df");
+    body.addColorStop(0.3, "#f6c453");
+    body.addColorStop(0.72, "#a51b38");
+    body.addColorStop(1, "#2a030c");
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r, 0, TAU);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255, 240, 190, 0.9)";
+    ctx.lineWidth = 0.9;
+    ctx.stroke();
+
+    ctx.strokeStyle = "rgba(255, 247, 218, 0.72)";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, b.r + 3.5, Math.PI * 0.1, Math.PI * 0.85);
+    ctx.stroke();
+
+    ctx.fillStyle = "#fff7db";
+    ctx.font = '800 7px "SFMono-Regular", monospace';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("赌", b.x, b.y + 0.5);
+  }
+}
+
 function drawBall(now) {
+  if (ball.hidden) return;
   const pos = getBallDrawPosition(now);
   const speed = Math.hypot(ball.vx, ball.vy);
   const isFlying = game.phase === "flying" && game.landingResolved === false;
@@ -3363,6 +3975,7 @@ function draw(now) {
     drawFocusGlow(now);
   }
   drawParticles();
+  drawBonusBalls(now);
   drawBall(now);
   if (activeTable.art === "cyberpunk") drawCyberSpring(ctx, now, game, activeTable);
   else drawSpring(now);
@@ -3415,8 +4028,9 @@ function update(now, dt) {
     pulsePowerTick(game.charge);
   }
 
-  // Main ball physics
-  if (game.phase === "flying") {
+  // Main ball physics. While the abyss wheel is spinning the marble is held
+  // inside the disc, so it neither falls nor re-triggers the sensor.
+  if (game.phase === "flying" && !game.wheel.active && !ball.hidden) {
     let remaining = Math.min(dt, 0.033);
     let guard = 0;
     while (remaining > 0 && guard < 12) {
@@ -3444,6 +4058,10 @@ function update(now, dt) {
         if (ball.stallTime > 1.15) {
           ball.vx += randomRange(-120, 120);
           ball.vy -= 150;
+          // Rail-pocket rescue: a ball that has settled against either rail
+          // gets an extra inward nudge instead of grinding in the corner.
+          if (ball.x < INNER.left + 26) ball.vx += 190;
+          else if (ball.x > MAIN_RIGHT - 26) ball.vx -= 190;
           ball.stallTime = 0;
           game.shake = Math.min(1.1, game.shake + 0.2);
         }
@@ -3463,29 +4081,19 @@ function update(now, dt) {
         resolveLanding();
       } else if (ball.vy > 40 && ball.x > MAIN_RIGHT && ball.y > 1040) {
         // Safety net: a ball that cannot clear the lane falls back into the
-        // launch cup. Treat that as a miss and return it to the limiter.
-        game.landingResolved = true;
-        game.result = {
-          won: false,
-          payout: 0,
-          tickets: 0,
-          slotIndex: getSlotIndex(clamp(ball.x, SLOT.x0 + 1, SLOT.x1 - 1)),
-        };
-        account.recordRound(false);
-        game.lastSlot = game.result.slotIndex;
-        game.flashSlot = game.lastSlot;
-        game.flashAt = now;
-        setRoundBadge("live", "开奖");
-        setPlayStatus("母球回到了发射舱", "本局未中奖", true);
-        schedule(() => showResultCard(game.result), 420);
-        schedule(beginReturn, 2650);
-        audio.lose();
+        // launch cup. Treat that as a miss and leave the round aggregation to
+        // the same finalizer used by normal landings.
+        resolveMissedMain();
       } else if (now - game.flightStartedAt > 30000) {
         ball.x = randomRange(SLOT.x0 + 20, SLOT.x1 - 20);
         ball.y = SLOT.sensorY + 4;
         resolveLanding();
       }
     }
+  }
+
+  if (bonusBalls.length && game.phase !== "idle") {
+    updateBonusBalls(now, dt);
   }
 
   // Return animation
@@ -3922,6 +4530,25 @@ function snapshot() {
     litRevealDone: game.litReveal.size
       ? performance.now() >= Math.max(...game.litReveal.values())
       : true,
+    wheel: {
+      active: game.wheel.active,
+      spinning: game.wheel.spinning,
+      sectorIndex: game.wheel.sectorIndex,
+      outcome: game.wheel.outcome,
+      spins: game.wheelSpins,
+      tickets: game.wheelTickets,
+      mainDestroyed: game.mainDestroyed,
+      bonusPayout: game.bonusPayout,
+      bonusTickets: game.bonusTickets,
+      bonusBalls: bonusBalls.length,
+      mainResolved: game.mainResolved,
+    },
+    bonusBalls: bonusBalls.map((b) => ({
+      x: Math.round(b.x),
+      y: Math.round(b.y),
+      vx: Math.round(b.vx),
+      vy: Math.round(b.vy),
+    })),
     payout: payoutFx.snapshot(),
   };
 }
@@ -4068,7 +4695,8 @@ function debugLanding(slotIndex = 0) {
   audio.init();
   const slot = clamp(Math.round(Number(slotIndex) || 0), 0, SLOT.count - 1);
   const drop = () => {
-    if (game.phase !== "ready") return false;
+    if (game.phase !== "ready" && game.phase !== "flying") return false;
+    if (game.phase === "flying" && game.wheel.active) return false;
     game.litSlots = new Set([slot]);
     game.litReveal = new Map([[slot, 0]]);
     game.phase = "flying";
@@ -4087,10 +4715,39 @@ function debugLanding(slotIndex = 0) {
     setPlayStatus("调试落点", `槽位 ${slot + 1}`, true);
     return true;
   };
-  if (game.phase === "ready") return drop();
+  if (game.phase === "ready" || game.phase === "flying") return drop();
   if (game.phase !== "idle") return false;
   startRound();
   window.setTimeout(drop, 1900);
+  return true;
+}
+
+/** QA helper: force the abyss wheel. `kind` may be boost / lose / add /
+    destroy; passing nothing picks a random sector. */
+function debugWheel(kind = null) {
+  if (activeTable.id !== "abyss") return false;
+  if (game.phase === "idle") {
+    startRound();
+    window.setTimeout(() => debugWheel(kind), 1900);
+    return true;
+  }
+  if (game.phase !== "ready" && game.phase !== "flying") return false;
+  if (game.wheel.active || game.landingResolved) return false;
+  if (game.phase === "ready") {
+    game.phase = "flying";
+    game.landingResolved = false;
+    game.flightStartedAt = performance.now();
+    setPhase("flying");
+    ball.hidden = false;
+  }
+  const wheel = findWheelObstacle();
+  if (!wheel) return false;
+  let forcedIndex = null;
+  if (kind) {
+    const found = wheel.sectors.findIndex((sector) => sector.kind === kind);
+    if (found >= 0) forcedIndex = found;
+  }
+  startAbyssWheel({ wheelId: wheel.id, x: wheel.x, y: wheel.y }, forcedIndex);
   return true;
 }
 
@@ -4110,6 +4767,7 @@ window.__MARBLE_DROP__ = {
   trace: debugTrace,
   payout: debugPayout,
   landing: debugLanding,
+  wheel: debugWheel,
   table: debugTable,
   get tables() {
     return TABLE_LIST.map((table) => table.id);

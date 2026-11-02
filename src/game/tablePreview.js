@@ -260,6 +260,52 @@ export function drawTablePreview(canvas, table) {
       ctx.arc(obstacle.x, obstacle.y, obstacle.r, 0, Math.PI * 2);
       ctx.fill();
       ctx.shadowBlur = 0;
+    } else if (obstacle.type === "wheel") {
+      const angles = obstacle.sectors?.length || 12;
+      const step = (Math.PI * 2) / angles;
+      ctx.save();
+      ctx.translate(obstacle.x, obstacle.y);
+      ctx.fillStyle = "rgba(20, 3, 9, 0.96)";
+      ctx.beginPath();
+      ctx.arc(0, 0, obstacle.r, 0, Math.PI * 2);
+      ctx.fill();
+      for (let i = 0; i < angles; i += 1) {
+        const start = -Math.PI / 2 + i * step - step / 2;
+        const end = start + step;
+        const kind = obstacle.sectors?.[i]?.kind || "boost";
+        ctx.fillStyle =
+          kind === "boost"
+            ? "rgba(246, 196, 83, 0.45)"
+            : kind === "lose"
+              ? "rgba(255, 59, 92, 0.4)"
+              : kind === "add"
+                ? "rgba(69, 240, 200, 0.35)"
+                : "rgba(120, 30, 110, 0.58)";
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.arc(0, 0, obstacle.r - 5, start, end);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = "rgba(246, 196, 83, 0.45)";
+        ctx.lineWidth = 1.4;
+        ctx.stroke();
+      }
+      ctx.strokeStyle = "#f6c453";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(0, 0, obstacle.r + 3, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.fillStyle = "#f6c453";
+      ctx.beginPath();
+      ctx.arc(0, 0, obstacle.r * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "#fff3c7";
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(0, -obstacle.r + 12);
+      ctx.stroke();
+      ctx.restore();
     } else if (obstacle.type === "portal") {
       for (const [point, color] of [
         [obstacle.a, obstacle.accentA || primary],
