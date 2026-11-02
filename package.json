@@ -2,8 +2,10 @@
   "name": "marble-drop",
   "version": "1.0.0",
   "private": true,
-  "description": "竖屏物理弹珠台小游戏 · Marble Drop",
+  "type": "module",
+  "description": "竖屏物理弹珠台 · 街机模式、游戏币经济与模块化前端",
   "scripts": {
-    "start": "python3 -m http.server 4173 --bind 127.0.0.1"
+    "start": "node scripts/serve.mjs",
+    "check": "node scripts/check.mjs"
   }
 }
