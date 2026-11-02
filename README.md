@@ -2,6 +2,10 @@
 
 竖屏物理弹珠台小游戏。当前版本围绕 **街机模式** 重建了主界面、游戏币经济、商店和选项，并把前端源码整理成原生 ES Modules 工程。
 
+**在线试玩：** <https://pepe-2026-coder.github.io/marble-drop/>
+
+**GitHub 仓库：** <https://github.com/pepe-2026-coder/marble-drop>
+
 ![主界面](./preview.png)
 
 ## 当前状态
@@ -84,6 +88,20 @@ npm run check
 设置与街机账号会保存在 `marble-drop-account-v2`。新版账号首次创建时从 300 颗弹珠开始，不会读取旧版 `marble-drop-save-v1` 的挑战进度。
 
 ![选项](./preview-options.png)
+
+## 在线部署
+
+站点通过 GitHub Actions 发布到 GitHub Pages。`.github/workflows/pages.yml` 会：
+
+1. 检出 `main`
+2. 把 `index.html` 和 `src/` 复制到静态站点目录
+3. 上传 Pages artifact 并发布
+
+推送到 `main` 会自动触发部署，也可以在 Actions 页面手动运行 `Deploy GitHub Pages`。
+
+GitHub Pages 的项目站点地址为：
+
+<https://pepe-2026-coder.github.io/marble-drop/>
 
 ## 工程结构
 
