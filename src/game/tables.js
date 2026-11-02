@@ -40,6 +40,22 @@ const LAB_ARCH = [
   { x: 638, y: 278 },
 ];
 
+/** A low, flatter arch for the budget table — less dramatic than the
+    angular neon and trapezoid lab cabinets. */
+const DUSK_ARCH = [
+  { x: 82, y: 278 },
+  { x: 88, y: 220 },
+  { x: 118, y: 166 },
+  { x: 178, y: 128 },
+  { x: 256, y: 106 },
+  { x: 360, y: 98 },
+  { x: 464, y: 106 },
+  { x: 542, y: 128 },
+  { x: 602, y: 166 },
+  { x: 632, y: 220 },
+  { x: 638, y: 278 },
+];
+
 /* ── Peg layouts ─────────────────────────────────────────── */
 
 function buildClassicPegs() {
@@ -122,6 +138,29 @@ const LAB_PEGS = [
     id: `l-${row}-${col}`,
   })),
 );
+
+/** Three sparse rows of ordinary neon pins. The budget table has no diamond
+    splitter field; the marble takes a more direct route. */
+const DUSK_PEGS = [
+  [380, 8, 146, 58, "cyan"],
+  [448, 7, 176, 58, "yellow"],
+  [516, 8, 146, 58, "magenta"],
+].flatMap(([y, count, startX, gap, hue], row) =>
+  Array.from({ length: count }, (_, col) => ({
+    x: startX + col * gap,
+    y,
+    r: 7.2,
+    kind: "metal",
+    hue,
+    phase: row * 1.1 + col * 0.4,
+    id: `d-${row}-${col}`,
+  })),
+).concat([
+  // Two small rail lamps keep the budget table from funnelling every marble
+  // down the left wall into slot 1.
+  { x: 104, y: 454, r: 9, kind: "metal", hue: "cyan", phase: 0.6, id: "d-edge-0" },
+  { x: 104, y: 530, r: 8, kind: "metal", hue: "magenta", phase: 2.4, id: "d-edge-1" },
+]);
 
 /* ── Obstacle recipes ────────────────────────────────────── */
 
@@ -280,6 +319,62 @@ const LAB_OBSTACLES = [
   },
 ];
 
+const DUSK_OBSTACLES = [
+  {
+    type: "mover",
+    style: "car",
+    w: 58,
+    h: 18,
+    radius: 6,
+    path: [
+      { x: 44, y: 596 },
+      { x: 622, y: 596 },
+    ],
+    speed: 88,
+    offset: 0.32,
+    mainFieldOnly: true,
+    accent: "#ffb347",
+    accent2: "#4be0c6",
+  },
+  {
+    type: "rotor",
+    x: 360,
+    y: 700,
+    length: 92,
+    thickness: 6,
+    arms: 2,
+    mode: "active",
+    speed: 1.15,
+    initialAngle: 0.4,
+    accent: "#ff5e78",
+    restitution: 0.64,
+  },
+  {
+    type: "block",
+    x: 170,
+    y: 836,
+    w: 76,
+    h: 56,
+    radius: 6,
+    seed: 11,
+    accent: "#4be0c6",
+    sign: "OPEN",
+    roofBounce: 80,
+  },
+  {
+    type: "block",
+    x: 522,
+    y: 846,
+    w: 64,
+    h: 44,
+    radius: 6,
+    seed: 12,
+    accent: "#ff5e78",
+    sign: "SNK",
+    roofBounce: 70,
+  },
+];
+
 /* ── Catalog ─────────────────────────────────────────────── */
 
 const DEFINITIONS = [
@@ -307,13 +402,39 @@ const DEFINITIONS = [
     },
   },
   {
+    id: "dusk",
+    name: "黄昏电玩",
+    en: "DUSK ARCADE",
+    tagline: "街角电玩店的旧机台，机关更少，落点更直白。",
+    description:
+      "一台缓慢巡逻的小车、一块常转的霓虹招牌和两座矮楼。没有飞行汽车列队和传送门，适合想轻松投珠的玩家。",
+    price: 14,
+    currency: "tickets",
+    art: "cyberpunk",
+    variant: "retro",
+    features: ["单层巡逻车", "小型转子", "基础钉阵"],
+    palette: {
+      primary: "#ffb347",
+      secondary: "#ff5e78",
+      tertiary: "#4be0c6",
+      background: "#140b12",
+      deep: "#07040a",
+    },
+    layout: {
+      arch: { kind: "polyline", points: DUSK_ARCH },
+      pegs: DUSK_PEGS,
+      obstacles: DUSK_OBSTACLES,
+      launchJitter: 20,
+    },
+  },
+  {
     id: "neon",
     name: "霓虹都市",
     en: "NEON CITY",
     tagline: "雨夜高架、飞行汽车与跳动的霓虹分流钉。",
     description:
       "顶层是闪烁的霓虹分流钉，中层两列飞行汽车循环穿梭，底层是参差的摩天楼群。",
-    price: 16,
+    price: 28,
     currency: "tickets",
     art: "cyberpunk",
     features: ["霓虹分流钉", "飞行汽车 ×4", "摩天楼群"],
@@ -338,7 +459,7 @@ const DEFINITIONS = [
     tagline: "主动与被动转子、弹射桩和一对相连的传送门。",
     description:
       "两台常转的霓虹转子切开落点，中央是被动转子。弹射桩提供额外回弹，传送门把左右两侧连成闭环。",
-    price: 24,
+    price: 40,
     currency: "tickets",
     art: "cyberpunk",
     variant: "lab",

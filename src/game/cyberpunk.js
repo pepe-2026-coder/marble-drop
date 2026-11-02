@@ -135,6 +135,7 @@ function drawBolt(ctx, x, y, radius = 3.2, accent = "rgba(130, 230, 255, 0.32)")
 export function drawCyberCabinet(ctx, now, table) {
   const palette = paletteOf(table);
   const points = archPoints(table);
+  const simple = table?.variant === "retro";
 
   // Outer chassis.
   const chassis = ctx.createLinearGradient(0, 0, 0, H);
@@ -201,75 +202,77 @@ export function drawCyberCabinet(ctx, now, table) {
     ctx.stroke();
   }
 
-  // Circuit traces.
-  const traces = [
-    [
-      [96, 340],
-      [140, 340],
-      [140, 390],
-      [188, 390],
-    ],
-    [
-      [624, 360],
-      [580, 360],
-      [580, 430],
-      [540, 430],
-    ],
-    [
-      [104, 930],
-      [148, 930],
-      [148, 880],
-      [190, 880],
-    ],
-    [
-      [616, 920],
-      [564, 920],
-      [564, 870],
-      [522, 870],
-    ],
-  ];
-  ctx.strokeStyle = `rgba(${palette.secondaryRgb}, 0.12)`;
-  ctx.lineWidth = 1;
-  for (const trace of traces) {
-    ctx.beginPath();
-    trace.forEach(([x, y], index) => (index === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
-    ctx.stroke();
-    for (const [x, y] of trace) {
-      ctx.fillStyle = `rgba(${palette.primaryRgb}, 0.22)`;
+  if (!simple) {
+    // Circuit traces.
+    const traces = [
+      [
+        [96, 340],
+        [140, 340],
+        [140, 390],
+        [188, 390],
+      ],
+      [
+        [624, 360],
+        [580, 360],
+        [580, 430],
+        [540, 430],
+      ],
+      [
+        [104, 930],
+        [148, 930],
+        [148, 880],
+        [190, 880],
+      ],
+      [
+        [616, 920],
+        [564, 920],
+        [564, 870],
+        [522, 870],
+      ],
+    ];
+    ctx.strokeStyle = `rgba(${palette.secondaryRgb}, 0.12)`;
+    ctx.lineWidth = 1;
+    for (const trace of traces) {
       ctx.beginPath();
-      ctx.arc(x, y, 1.7, 0, TAU);
-      ctx.fill();
+      trace.forEach(([x, y], index) => (index === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+      ctx.stroke();
+      for (const [x, y] of trace) {
+        ctx.fillStyle = `rgba(${palette.primaryRgb}, 0.22)`;
+        ctx.beginPath();
+        ctx.arc(x, y, 1.7, 0, TAU);
+        ctx.fill();
+      }
     }
-  }
 
-  // Distant skyline silhouette behind the lower half.
-  const skyline = [
-    [96, 1080, 34, 100],
-    [136, 1108, 26, 72],
-    [168, 1068, 40, 112],
-    [214, 1116, 22, 64],
-    [244, 1092, 30, 88],
-    [280, 1120, 20, 60],
-    [306, 1076, 38, 104],
-    [352, 1104, 26, 76],
-    [386, 1084, 32, 96],
-    [424, 1114, 22, 66],
-    [452, 1072, 36, 108],
-    [494, 1100, 28, 80],
-    [528, 1080, 34, 100],
-    [568, 1120, 22, 60],
-    [596, 1090, 26, 90],
-  ];
-  for (const [x, y, w, h] of skyline) {
-    ctx.fillStyle = "rgba(6, 12, 24, 0.78)";
-    ctx.fillRect(x, y, w, h);
-    ctx.strokeStyle = "rgba(80, 160, 220, 0.1)";
-    ctx.lineWidth = 0.8;
-    ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
-    for (let wy = y + 10; wy < 1176; wy += 13) {
-      for (let wx = x + 5; wx < x + w - 4; wx += 9) {
-        ctx.fillStyle = `rgba(${palette.tertiaryRgb}, ${((wx + wy) % 17 === 0 ? 0.14 : 0.035)})`;
-        ctx.fillRect(wx, wy, 2.4, 3.2);
+    // Distant skyline silhouette behind the lower half.
+    const skyline = [
+      [96, 1080, 34, 100],
+      [136, 1108, 26, 72],
+      [168, 1068, 40, 112],
+      [214, 1116, 22, 64],
+      [244, 1092, 30, 88],
+      [280, 1120, 20, 60],
+      [306, 1076, 38, 104],
+      [352, 1104, 26, 76],
+      [386, 1084, 32, 96],
+      [424, 1114, 22, 66],
+      [452, 1072, 36, 108],
+      [494, 1100, 28, 80],
+      [528, 1080, 34, 100],
+      [568, 1120, 22, 60],
+      [596, 1090, 26, 90],
+    ];
+    for (const [x, y, w, h] of skyline) {
+      ctx.fillStyle = "rgba(6, 12, 24, 0.78)";
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = "rgba(80, 160, 220, 0.1)";
+      ctx.lineWidth = 0.8;
+      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+      for (let wy = y + 10; wy < 1176; wy += 13) {
+        for (let wx = x + 5; wx < x + w - 4; wx += 9) {
+          ctx.fillStyle = `rgba(${palette.tertiaryRgb}, ${((wx + wy) % 17 === 0 ? 0.14 : 0.035)})`;
+          ctx.fillRect(wx, wy, 2.4, 3.2);
+        }
       }
     }
   }
@@ -357,7 +360,7 @@ export function drawCyberCabinet(ctx, now, table) {
   ctx.font = '700 7px "SFMono-Regular", monospace';
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText(`${table.en || "CYBER"} · T-77`, 360, 1162);
+  ctx.fillText(`${table.en || "CYBER"} · ${simple ? "T-14" : "T-77"}`, 360, 1162);
   ctx.restore();
 }
 
@@ -365,6 +368,7 @@ export function drawCyberCabinet(ctx, now, table) {
 
 export function drawCyberMarquee(ctx, now, table) {
   const palette = paletteOf(table);
+  const simple = table?.variant === "retro";
   const flicker =
     (Math.sin(now * 0.0053) + Math.sin(now * 0.011 + 1.7)) > -1.45
       ? 0.84 + Math.sin(now * 0.004) * 0.16
@@ -374,16 +378,18 @@ export function drawCyberMarquee(ctx, now, table) {
   ctx.textAlign = "center";
 
   // Neon tick ring around the dome.
-  for (let i = 0; i < 21; i += 1) {
-    const angle = Math.PI + (i / 20) * Math.PI;
-    const radiusX = 246;
-    const radiusY = 246;
-    const x = 360 + Math.cos(angle) * radiusX;
-    const y = 330 + Math.sin(angle) * radiusY;
-    ctx.fillStyle = `rgba(${palette.primaryRgb}, ${i % 5 === 0 ? 0.34 : 0.12})`;
-    ctx.beginPath();
-    ctx.arc(x, y, i % 5 === 0 ? 2 : 1.1, 0, TAU);
-    ctx.fill();
+  if (!simple) {
+    for (let i = 0; i < 21; i += 1) {
+      const angle = Math.PI + (i / 20) * Math.PI;
+      const radiusX = 246;
+      const radiusY = 246;
+      const x = 360 + Math.cos(angle) * radiusX;
+      const y = 330 + Math.sin(angle) * radiusY;
+      ctx.fillStyle = `rgba(${palette.primaryRgb}, ${i % 5 === 0 ? 0.34 : 0.12})`;
+      ctx.beginPath();
+      ctx.arc(x, y, i % 5 === 0 ? 2 : 1.1, 0, TAU);
+      ctx.fill();
+    }
   }
 
   ctx.save();
@@ -413,7 +419,11 @@ export function drawCyberMarquee(ctx, now, table) {
 
   drawSpacedText(
     ctx,
-    table.id === "warp" ? "QUANTUM PACHINKO · No.91" : "CYBER PACHINKO · No.77",
+    table.id === "warp"
+      ? "QUANTUM PACHINKO · No.91"
+      : table.id === "dusk"
+        ? "RETRO PACHINKO · No.14"
+        : "CYBER PACHINKO · No.77",
     360,
     170,
     2.4,
@@ -442,29 +452,31 @@ export function drawCyberMarquee(ctx, now, table) {
   ctx.closePath();
   ctx.fill();
 
-  // The dome centre becomes a holographic reticle, clear of the splitter pins.
-  ctx.save();
-  ctx.translate(360, 278);
-  ctx.rotate(now * 0.00018);
-  ctx.strokeStyle = `rgba(${palette.secondaryRgb}, 0.18)`;
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.arc(0, 0, 34, 0, TAU);
-  ctx.stroke();
-  ctx.setLineDash([4, 10]);
-  ctx.strokeStyle = `rgba(${palette.primaryRgb}, 0.22)`;
-  ctx.beginPath();
-  ctx.arc(0, 0, 44, 0, TAU);
-  ctx.stroke();
-  ctx.setLineDash([]);
-  for (let i = 0; i < 8; i += 1) {
-    const angle = (i / 8) * TAU;
-    ctx.fillStyle = `rgba(${palette.tertiaryRgb}, 0.35)`;
+  if (!simple) {
+    // The dome centre becomes a holographic reticle, clear of the splitter pins.
+    ctx.save();
+    ctx.translate(360, 278);
+    ctx.rotate(now * 0.00018);
+    ctx.strokeStyle = `rgba(${palette.secondaryRgb}, 0.18)`;
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.arc(Math.cos(angle) * 39, Math.sin(angle) * 39, 1.4, 0, TAU);
-    ctx.fill();
+    ctx.arc(0, 0, 34, 0, TAU);
+    ctx.stroke();
+    ctx.setLineDash([4, 10]);
+    ctx.strokeStyle = `rgba(${palette.primaryRgb}, 0.22)`;
+    ctx.beginPath();
+    ctx.arc(0, 0, 44, 0, TAU);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    for (let i = 0; i < 8; i += 1) {
+      const angle = (i / 8) * TAU;
+      ctx.fillStyle = `rgba(${palette.tertiaryRgb}, 0.35)`;
+      ctx.beginPath();
+      ctx.arc(Math.cos(angle) * 39, Math.sin(angle) * 39, 1.4, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
   }
-  ctx.restore();
 
   ctx.restore();
 }
