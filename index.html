@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0d0b09" />
-    <meta name="description" content="竖屏物理弹珠台：街机模式、游戏币与彩票经济、物理碰撞和弹簧发射。" />
+    <meta name="description" content="竖屏物理弹珠台：可购买的多台机台、霓虹分流钉 / 飞行汽车 / 旋转与传送门障碍物、街机经济与物理碰撞。" />
     <title>弹珠台 · MARBLE DROP</title>
     <link rel="stylesheet" href="./src/styles/game.css" />
     <link rel="stylesheet" href="./src/styles/shell.css" />
@@ -96,7 +96,7 @@
           <div class="menu-btn-row">
             <button class="menu-btn menu-secondary" id="shopBtn" type="button">
               <span class="menu-btn-icon" aria-hidden="true">◈</span>
-              <span><strong>商店</strong><small>彩票 / 皮肤 / 弹珠</small></span>
+              <span><strong>商店</strong><small>机台 / 皮肤 / 弹珠</small></span>
             </button>
             <button class="menu-btn menu-secondary" id="optionsBtn" type="button">
               <span class="menu-btn-icon" aria-hidden="true">⚙</span>
@@ -315,6 +315,26 @@
           <button id="shopReliefBtn" type="button">领取 30 颗补助</button>
         </div>
 
+        <div class="exchange-card table-counter">
+          <div class="exchange-head">
+            <span class="exchange-icon table-icon" aria-hidden="true">▦</span>
+            <div>
+              <h2>弹珠台机台</h2>
+              <p>用游戏币购买新的机台。不同机台拥有独立的外观、机柜造型与专属障碍物，共享同一套投注和奖槽规则。</p>
+            </div>
+          </div>
+
+          <div class="skin-summary">
+            <span class="skin-summary-label">当前机台</span>
+            <b id="tableEquippedName" aria-live="polite">橡木经典</b>
+            <span class="skin-summary-hint">购买后立即装备，下一局生效</span>
+          </div>
+
+          <div class="table-grid" id="tableGrid"></div>
+
+          <p class="skin-note">机台只改变棋盘布局、障碍物与外观，不改变投注、倍率、奖槽和彩票规则。</p>
+        </div>
+
         <div class="exchange-card skin-counter">
           <div class="exchange-head">
             <span class="exchange-icon skin-icon" aria-hidden="true">◉</span>
@@ -410,6 +430,7 @@
         <li><b>释放母球</b><span>限位器自动打开，母球落入右下发射舱。</span></li>
         <li><b>线性调节拉力，松手发射</b><span>按住右下角弹簧把手向下拖动，底部力度条会实时显示弱力 / 中力 / 强力 / 满力。松手发射，满力可冲到圆顶最高点。</span></li>
         <li><b>落入奖槽即可中奖</b><span>返还「投入 × 倍率」颗弹珠。每满 30 颗返还弹珠，额外获得 1 张彩票。中奖后弹珠会吐进托盘，等待全部落完再显示结算；可在选项中关闭中奖动画。</span></li>
+        <li><b>机台与障碍物</b><span>在商店用游戏币购买并装备新机台。不同机台有独立外观与障碍物：霓虹分流钉、循环飞行的汽车、主动 / 被动旋转转子、碰撞弹射桩和成对传送门。障碍物会真实参与碰撞，但投注、倍率、奖槽和彩票规则不变。</span></li>
         <li><b>街机经济</b><span>1 张彩票可在商店兑换 5 游戏币，1 游戏币可购买 5 颗弹珠。当弹珠不足 5 颗、且没有游戏币和彩票时，可免费领取 30 颗补助。</span></li>
       </ol>
       <div class="odds-card">

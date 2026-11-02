@@ -1030,6 +1030,158 @@
   font-weight: 700;
 }
 
+/* ── Pinball tables ──────────────────────────────────────── */
+
+.table-icon {
+  border: 1px solid rgba(34, 230, 255, 0.3);
+  color: #c8f9ff;
+  background: radial-gradient(circle at 35% 28%, #2b8fb3, #102a52);
+}
+
+.table-counter {
+  padding-bottom: 12px;
+}
+
+.table-grid {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.table-card {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(255, 240, 207, 0.09);
+  border-radius: 13px;
+  background:
+    radial-gradient(90% 120% at 0% 0%, rgba(var(--table-accent-rgb), 0.06), transparent 62%),
+    linear-gradient(140deg, rgba(39, 29, 20, 0.72), rgba(18, 14, 10, 0.72));
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    transform 160ms ease;
+}
+
+.table-card.is-equipped {
+  border-color: rgba(var(--table-accent-rgb), 0.46);
+  background:
+    radial-gradient(90% 130% at 0% 0%, rgba(var(--table-accent-rgb), 0.14), transparent 62%),
+    linear-gradient(140deg, rgba(46, 34, 22, 0.9), rgba(15, 17, 20, 0.9));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 8px 22px rgba(0, 0, 0, 0.22);
+}
+
+.table-card.is-cyber {
+  border-color: rgba(var(--table-accent-rgb), 0.18);
+  background:
+    radial-gradient(100% 130% at 0% 0%, rgba(var(--table-accent-rgb), 0.1), transparent 60%),
+    linear-gradient(140deg, rgba(12, 22, 38, 0.92), rgba(9, 10, 18, 0.94));
+}
+
+.table-card.is-cyber.is-equipped {
+  border-color: rgba(var(--table-accent-rgb), 0.62);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 0 26px rgba(var(--table-accent-rgb), 0.12);
+}
+
+.table-thumb {
+  display: block;
+  width: 88px;
+  height: 152px;
+  border-radius: 10px;
+  border: 1px solid rgba(var(--table-accent-rgb), 0.28);
+  background: #060b16;
+  box-shadow:
+    inset 0 0 18px rgba(0, 0, 0, 0.5),
+    0 5px 14px rgba(0, 0, 0, 0.24);
+}
+
+.table-card.is-classic .table-thumb {
+  border-color: rgba(231, 181, 102, 0.28);
+  background: #211a13;
+}
+
+.table-card-body {
+  min-width: 0;
+  align-self: start;
+}
+
+.table-desc {
+  margin: 5px 0 0;
+  color: rgba(244, 236, 220, 0.3);
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.table-card.is-cyber .table-desc {
+  color: rgba(200, 240, 255, 0.34);
+}
+
+.table-card.is-cyber .skin-name {
+  color: #ecfdff;
+  text-shadow: 0 0 12px rgba(var(--table-accent-rgb), 0.35);
+}
+
+.table-card.is-cyber .skin-en {
+  color: rgba(var(--table-accent-rgb), 0.7);
+}
+
+.table-card.is-cyber .skin-chip {
+  border-color: rgba(var(--table-accent-rgb), 0.15);
+  color: rgba(220, 248, 255, 0.56);
+}
+
+.table-card-foot {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 240, 207, 0.06);
+}
+
+.table-card.is-cyber .table-card-foot {
+  border-top-color: rgba(var(--table-accent-rgb), 0.1);
+}
+
+.table-price {
+  color: rgba(244, 236, 220, 0.38);
+  font-family: "SFMono-Regular", monospace;
+  font-size: 8px;
+  letter-spacing: 0.04em;
+}
+
+.table-card.is-cyber .table-price {
+  color: rgba(var(--table-accent-rgb), 0.6);
+}
+
+.table-card .skin-btn {
+  min-width: 86px;
+}
+
+.table-card.is-cyber .skin-btn {
+  border-color: rgba(var(--table-accent-rgb), 0.36);
+  background: rgba(var(--table-accent-rgb), 0.1);
+  color: #dffcff;
+}
+
+.table-card.is-cyber .skin-btn.is-equipped {
+  border-color: rgba(var(--table-second-rgb), 0.36);
+  background: rgba(var(--table-second-rgb), 0.12);
+  color: #ffe1f4;
+}
+
+.table-card.is-cyber .skin-btn.is-buy {
+  border-color: rgba(var(--table-accent-rgb), 0.42);
+  background: rgba(var(--table-accent-rgb), 0.13);
+}
+
 .shop-note,
 .options-note {
   margin: 10px 2px 0;
@@ -1259,6 +1411,281 @@
 }
 
 /* ── Responsive adjustments ──────────────────────────────── */
+
+/* ── Cyberpunk table chrome ──────────────────────────────── */
+
+body:is([data-table="neon"], [data-table="warp"]) .page-glow {
+  background:
+    radial-gradient(105% 58% at 50% -8%, rgba(var(--table-accent-rgb), 0.2) 0%, transparent 62%),
+    radial-gradient(58% 44% at 8% 104%, rgba(var(--table-second-rgb), 0.16) 0%, transparent 72%),
+    radial-gradient(48% 38% at 98% 76%, rgba(var(--table-third-rgb), 0.07) 0%, transparent 75%),
+    linear-gradient(180deg, #05070f 0%, #070a14 54%, #03050b 100%);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .machine {
+  filter: drop-shadow(0 28px 55px rgba(0, 0, 0, 0.62))
+    drop-shadow(0 0 34px rgba(var(--table-accent-rgb), 0.16));
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .brand-mark {
+  border-color: rgba(var(--table-accent-rgb), 0.58);
+  background:
+    radial-gradient(circle at 50% 36%, rgba(var(--table-accent-rgb), 0.22), transparent 55%),
+    rgba(8, 15, 28, 0.86);
+  box-shadow:
+    inset 0 0 0 3px #04070d,
+    inset 0 0 0 4px rgba(var(--table-accent-rgb), 0.18);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .brand-mark::before,
+body:is([data-table="neon"], [data-table="warp"]) .brand-mark::after {
+  border-color: rgba(var(--table-accent-rgb), 0.3);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .brand-mark i {
+  background: var(--table-second);
+  box-shadow: 0 0 10px rgba(var(--table-second-rgb), 0.9);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .round-badge {
+  border-color: rgba(var(--table-accent-rgb), 0.35);
+  background: rgba(5, 13, 26, 0.82);
+  color: rgba(210, 249, 255, 0.82);
+  box-shadow:
+    0 4px 14px rgba(0, 0, 0, 0.28),
+    0 0 18px rgba(var(--table-accent-rgb), 0.08);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .round-badge.is-live {
+  color: #e6feff;
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .round-badge.is-live .round-dot {
+  background: var(--table-second);
+  box-shadow:
+    0 0 0 2px rgba(var(--table-second-rgb), 0.18),
+    0 0 10px rgba(var(--table-second-rgb), 0.8);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .round-badge.is-ready .round-dot {
+  background: var(--table-accent);
+  box-shadow: 0 0 8px rgba(var(--table-accent-rgb), 0.7);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .hint-bubble {
+  border-color: rgba(var(--table-accent-rgb), 0.34);
+  background: rgba(4, 11, 23, 0.92);
+  color: rgba(224, 249, 255, 0.92);
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.4),
+    0 0 20px rgba(var(--table-accent-rgb), 0.08);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .hint-arrow {
+  background: rgba(var(--table-accent-rgb), 0.15);
+  color: var(--table-accent);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .multiplier-banner {
+  border-color: rgba(var(--table-accent-rgb), 0.4);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(var(--table-second-rgb), 0.16), transparent 62%),
+    linear-gradient(150deg, rgba(8, 18, 34, 0.97), rgba(4, 9, 19, 0.94));
+  color: #ddfbff;
+  box-shadow:
+    0 18px 45px rgba(0, 0, 0, 0.5),
+    0 0 30px rgba(var(--table-accent-rgb), 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .multiplier-banner::before {
+  background: radial-gradient(ellipse, rgba(var(--table-accent-rgb), 0.65), transparent 70%);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .banner-kicker {
+  color: rgba(var(--table-accent-rgb), 0.72);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .multiplier-banner strong {
+  color: #ffffff;
+  text-shadow:
+    0 0 14px rgba(var(--table-accent-rgb), 0.8),
+    0 0 24px rgba(var(--table-second-rgb), 0.35);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .banner-sub {
+  color: rgba(214, 245, 255, 0.6);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .banner-sub b {
+  color: var(--table-third);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .result-card {
+  border-color: rgba(var(--table-accent-rgb), 0.38);
+  background:
+    radial-gradient(circle at 50% -30%, rgba(var(--table-accent-rgb), 0.16), transparent 58%),
+    rgba(5, 11, 22, 0.96);
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.62),
+    0 0 34px rgba(var(--table-accent-rgb), 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .result-card::before {
+  border-color: rgba(var(--table-accent-rgb), 0.18);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .result-card.is-loss {
+  background:
+    radial-gradient(circle at 50% -30%, rgba(120, 150, 180, 0.1), transparent 58%),
+    rgba(5, 11, 22, 0.96);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .result-eyebrow {
+  color: var(--table-accent);
+  text-shadow: 0 0 12px rgba(var(--table-accent-rgb), 0.5);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .result-card h2 {
+  color: #f2feff;
+  text-shadow: 0 0 18px rgba(var(--table-accent-rgb), 0.45);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .result-card.is-loss h2 {
+  color: #c4d7e4;
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .result-ticket {
+  border-color: rgba(var(--table-accent-rgb), 0.28);
+  background: rgba(var(--table-accent-rgb), 0.1);
+  color: #dcfbff;
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .dock {
+  border-color: rgba(var(--table-accent-rgb), 0.2);
+  background:
+    radial-gradient(80% 120% at 0% 0%, rgba(var(--table-accent-rgb), 0.07), transparent 60%),
+    linear-gradient(155deg, rgba(10, 20, 36, 0.97), rgba(4, 8, 16, 0.99));
+  box-shadow:
+    0 -1px 0 rgba(255, 255, 255, 0.04) inset,
+    0 19px 45px rgba(0, 0, 0, 0.46),
+    0 0 26px rgba(var(--table-accent-rgb), 0.06);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .dock::before {
+  background: linear-gradient(90deg, transparent, rgba(var(--table-accent-rgb), 0.7), transparent);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .dock::after {
+  background: radial-gradient(circle, rgba(var(--table-second-rgb), 0.14), transparent 67%);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .dock-head,
+body:is([data-table="neon"], [data-table="warp"]) .dock-note {
+  color: rgba(204, 240, 255, 0.48);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .dock-note b {
+  color: var(--table-accent);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .step-btn {
+  border-color: rgba(var(--table-accent-rgb), 0.24);
+  background: rgba(var(--table-accent-rgb), 0.06);
+  color: rgba(214, 248, 255, 0.75);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .step-btn:hover {
+  border-color: rgba(var(--table-accent-rgb), 0.5);
+  background: rgba(var(--table-accent-rgb), 0.12);
+  color: #e8feff;
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .bet-display {
+  border-color: rgba(var(--table-accent-rgb), 0.32);
+  background:
+    linear-gradient(180deg, rgba(var(--table-accent-rgb), 0.1), rgba(0, 0, 0, 0.06)),
+    rgba(0, 0, 0, 0.25);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .bet-display input {
+  color: #e6feff;
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .start-btn {
+  border-color: rgba(var(--table-accent-rgb), 0.42);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), transparent 42%),
+    linear-gradient(135deg, rgba(var(--table-accent-rgb), 0.95) 0%, rgba(var(--table-accent-rgb), 0.72) 48%, rgba(var(--table-second-rgb), 0.82) 100%);
+  color: #031018;
+  box-shadow:
+    0 7px 20px rgba(var(--table-accent-rgb), 0.24),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .start-btn > small {
+  color: rgba(3, 16, 24, 0.72);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .quick-row > button[data-bet] {
+  background: rgba(var(--table-accent-rgb), 0.06);
+  color: rgba(206, 242, 255, 0.58);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .quick-row > button[data-bet].is-active {
+  border-color: rgba(var(--table-accent-rgb), 0.42);
+  background: rgba(var(--table-accent-rgb), 0.16);
+  color: #e8feff;
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .mini-light {
+  background: var(--table-accent);
+  box-shadow: 0 0 8px rgba(var(--table-accent-rgb), 0.8);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .live-dot {
+  background: rgba(var(--table-accent-rgb), 0.6);
+  box-shadow: 0 0 8px rgba(var(--table-accent-rgb), 0.5);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .live-dot.is-live {
+  background: var(--table-second);
+  box-shadow: 0 0 10px rgba(var(--table-second-rgb), 0.7);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .play-meta b {
+  color: #dcfbff;
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .pull-meter {
+  border-color: rgba(var(--table-accent-rgb), 0.2);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .pull-fill {
+  background: linear-gradient(90deg, rgba(var(--table-accent-rgb), 0.7), rgba(var(--table-second-rgb), 0.9));
+  box-shadow: 0 0 12px rgba(var(--table-accent-rgb), 0.5);
+}
+
+body:is([data-table="neon"], [data-table="warp"]) .toast {
+  border-color: rgba(var(--table-accent-rgb), 0.3);
+  background: rgba(4, 11, 23, 0.94);
+  color: #e6feff;
+  box-shadow:
+    0 14px 34px rgba(0, 0, 0, 0.5),
+    0 0 22px rgba(var(--table-accent-rgb), 0.1);
+}
+
+@media (max-width: 370px) {
+  .table-card {
+    grid-template-columns: 78px minmax(0, 1fr);
+  }
+
+  .table-thumb {
+    width: 78px;
+    height: 135px;
+  }
+}
 
 @media (max-height: 700px) {
   .menu-shell {
