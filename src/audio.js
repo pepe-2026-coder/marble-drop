@@ -13,6 +13,8 @@ class SoundEngine {
   constructor() {
     this.ctx = null;
     this.master = null;
+    this.limiter = null;
+    this.output = null;
     this.noiseBuffer = null;
     this.lastPegAt = 0;
     this.lastWallAt = 0;
@@ -33,7 +35,26 @@ class SoundEngine {
     this.ctx = new Ctx();
     this.master = this.ctx.createGain();
     this.master.gain.value = this.#gain();
-    this.master.connect(this.ctx.destination);
+
+    // The old 0.42× master left a typical win peaking around -26 dBFS, which
+    // is barely audible on a phone speaker unless the user maxes the slider.
+    // Run the master at unity, tame the few loud stacked moments (win
+    // fanfares, payout clinks) with a limiter, then apply a fixed makeup gain
+    // so single sounds are loud too. The limiter sees peaks before makeup, so
+    // even a fully stacked fanfare stays below full scale.
+    this.limiter = this.ctx.createDynamicsCompressor();
+    this.limiter.threshold.value = -18;
+    this.limiter.knee.value = 12;
+    this.limiter.ratio.value = 4;
+    this.limiter.attack.value = 0.003;
+    this.limiter.release.value = 0.2;
+
+    this.output = this.ctx.createGain();
+    this.output.gain.value = 2.6;
+
+    this.master.connect(this.limiter);
+    this.limiter.connect(this.output);
+    this.output.connect(this.ctx.destination);
     this.noiseBuffer = this.#createNoiseBuffer();
   }
 
@@ -46,7 +67,9 @@ class SoundEngine {
   }
 
   #gain() {
-    return this.muted ? 0 : 0.42 * this.volume;
+    // Unity at 100 %, linear slider. The limiter keeps the sum of stacked
+    // tones from clipping.
+    return this.muted ? 0 : this.volume;
   }
 
   #enabled() {
