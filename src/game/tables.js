@@ -572,11 +572,23 @@ const DEFINITIONS = [
     name: "橡木经典",
     en: "OAK CLASSIC",
     tagline: "温润纸面与黄铜钉阵，街机厅最熟悉的一台机器。",
-    description: "对称 10/9 交错钉阵，落点完全由重力与碰撞决定。",
+    description: "对称 10/9 交错钉阵，低倍率更常见，适合快速攒弹珠和熟悉拉杆手感。",
     price: 0,
     currency: "tickets",
     art: "classic",
-    features: ["对称钉阵", "黄铜回球坡道", "纯物理落点"],
+    features: ["新手友好", "对称 10/9 钉阵", "单次彩票≤3 张"],
+    // The entry table is deliberately generous: low multipliers dominate, the
+    // top prize stops at ×6 and a single payout can never mint more than three
+    // tickets. It is the place to build a marble bank and learn the plunger,
+    // not a place to farm the long-term currency.
+    rules: {
+      multipliers: [
+        { value: 2, weight: 46, slots: 5 },
+        { value: 4, weight: 34, slots: 3 },
+        { value: 6, weight: 20, slots: 2 },
+      ],
+      ticketCap: 3,
+    },
     palette: {
       primary: "#e7b566",
       secondary: "#dd3b2c",

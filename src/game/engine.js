@@ -758,9 +758,11 @@ function stepBallPhysics(b, dt) {
 }
 
 function launchSpeed(power) {
-  // Linear force curve: every 1% of pull adds the same launch speed. The top
-  // of the range (2280) is tuned to carry the marble to the dome's high point.
-  return 1800 + clamp(power, 0, 1) * 480;
+  // The pull only needs to cover a small band above the lane's clearing speed.
+  // At the bottom of the range the marble just crests the launch channel; the
+  // top of the range adds enough extra force to carry it farther into the
+  // field without turning the plunger into a cannon.
+  return 1700 + clamp(power, 0, 1) * 300;
 }
 
 function getSlotIndex(x) {
@@ -954,14 +956,38 @@ function updateParticles(dt) {
 
 /* ── Multiplier & slot selection ─────────────────────────── */
 
+function activeMultipliers() {
+  const tableRules = activeTable.rules;
+  return tableRules && Array.isArray(tableRules.multipliers) && tableRules.multipliers.length
+    ? tableRules.multipliers
+    : MULTIPLIERS;
+}
+
 function pickMultiplier() {
-  const total = MULTIPLIERS.reduce((sum, item) => sum + item.weight, 0);
+  const table = activeMultipliers();
+  const total = table.reduce((sum, item) => sum + item.weight, 0);
   let roll = Math.random() * total;
-  for (const item of MULTIPLIERS) {
+  for (const item of table) {
     roll -= item.weight;
     if (roll <= 0) return item;
   }
-  return MULTIPLIERS[0];
+  return table[0];
+}
+
+/** Tables can cap the tickets a single payout can mint. The entry table uses
+    this to stay a marble-earning stepping stone instead of a ticket farm. */
+function ticketCap() {
+  const cap = Number(activeTable.rules?.ticketCap);
+  return Number.isFinite(cap) ? Math.max(0, Math.floor(cap)) : Infinity;
+}
+
+function payoutTickets(payout) {
+  const raw = Math.floor(Math.max(0, payout) / 30);
+  return Math.min(raw, ticketCap());
+}
+
+function isTicketCapped(payout, tickets) {
+  return tickets < Math.floor(Math.max(0, payout) / 30);
 }
 
 function pickLitSlots(count) {
@@ -1349,8 +1375,8 @@ function armTool(type) {
   if (game.placingTool === type) {
     game.placingTool = null;
     updateToolTrayUI();
-    setPlayStatus("拉下弹簧，松手发射", "满力可冲上圆顶", true);
-    showHint("拉到底，满力冲上圆顶最高点", 3200);
+    setPlayStatus("拉下弹簧，松手发射", "弱力擦顶，强力更远", true);
+    showHint("弱力刚好越过通道顶部，强力送得更远", 3200);
     return;
   }
   game.placingTool = type;
@@ -1368,8 +1394,8 @@ function armTool(type) {
 function clearToolPlacement(withHint = true) {
   game.placingTool = null;
   updateToolTrayUI();
-  setPlayStatus("拉下弹簧，松手发射", "满力可冲上圆顶", true);
-  if (withHint) showHint("拉到底，满力冲上圆顶最高点", 3200);
+  setPlayStatus("拉下弹簧，松手发射", "弱力擦顶，强力更远", true);
+  if (withHint) showHint("弱力刚好越过通道顶部，强力送得更远", 3200);
 }
 
 function consumeToolPlacement(type) {
@@ -1575,7 +1601,7 @@ function attemptToolPlacement(point) {
       true,
     );
   } else {
-    setPlayStatus("布阵完成 · 拉下弹簧发射", "满力可冲上圆顶", true);
+    setPlayStatus("布阵完成 · 拉下弹簧发射", "弱力擦顶，强力更远", true);
     showHint("布阵完成，拉下弹簧发射", 2600);
   }
   return true;
@@ -1700,6 +1726,9 @@ function showResultCard(result) {
       ticketParts.push("轮盘彩票 ±0");
     }
   }
+  if (result.ticketCapHit && result.ticketCap > 0) {
+    ticketParts.push(`基础机台单次彩票上限 ${result.ticketCap} 张`);
+  }
   resultTicket.textContent = ticketParts.join(" · ");
 
   resultProgress.hidden = true;
@@ -1764,12 +1793,14 @@ function resetAbyssRound() {
   game.wheelSpins = 0;
   game.mainPayout = 0;
   game.mainTickets = 0;
+  game.mainTicketCapHit = false;
   game.mainSlot = null;
   game.mainWon = false;
   game.mainDestroyed = false;
   game.mainResolved = false;
   game.bonusPayout = 0;
   game.bonusTickets = 0;
+  game.bonusTicketCapHit = false;
   game.bonusBallsScored = 0;
   game.landingFlowStarted = false;
   game.forceBonusLandingAt = 0;
@@ -1882,14 +1913,14 @@ function openGate() {
     setPhase("ready");
     setPowerUI(0, "ready");
     setRoundBadge("ready", "待发射");
-    setPlayStatus("拉下弹簧，松手发射", "满力可冲上圆顶", true);
-    showHint("拉到底，满力冲上圆顶最高点", 5200);
+    setPlayStatus("拉下弹簧，松手发射", "弱力擦顶，强力更远", true);
+    showHint("弱力刚好越过通道顶部，强力送得更远", 5200);
     audio.tone(392, 0.12, "sine", 0.04, 523.25);
   }, 980);
 }
 
 function setHintTextSafe() {
-  hintText.textContent = "拉到底，满力冲上圆顶最高点";
+  hintText.textContent = "弱力刚好越过通道顶部，强力送得更远";
 }
 
 function beginCharge(mode, pointerY = 0, clientY = 0) {
@@ -1939,8 +1970,8 @@ function releaseCharge(cancelled = false) {
     game.charging = false;
     game.chargeMode = null;
     setRoundBadge("ready", "待拉杆");
-    setPlayStatus("拉下弹簧，松手发射", "满力可冲上圆顶", true);
-    showHint("拉到底，满力冲上圆顶最高点", 4800);
+    setPlayStatus("拉下弹簧，松手发射", "弱力擦顶，强力更远", true);
+    showHint("弱力刚好越过通道顶部，强力送得更远", 4800);
     return;
   }
   if (!game.pointerMoved || game.charge < 0.035) {
@@ -1951,7 +1982,7 @@ function releaseCharge(cancelled = false) {
     setPowerUI(0, "ready");
     setRoundBadge("ready", "待拉杆");
     setPlayStatus("还没有拉动弹簧", "按住把手向下拉", true);
-    showHint("拉到底，满力冲上圆顶最高点", 4800);
+    showHint("弱力刚好越过通道顶部，强力送得更远", 4800);
     toast("按住右下角把手向下拉，松手发射");
     return;
   }
@@ -2223,9 +2254,10 @@ function resolveBonusLanding(bonusBall, forced = false) {
   const index = getSlotIndex(clamp(bonusBall.x, SLOT.x0 + 4, SLOT.x1 - 4));
   const won = game.litSlots.has(index);
   const payout = won ? game.bet * game.multiplier : 0;
-  const tickets = Math.floor(payout / 30);
+  const tickets = payoutTickets(payout);
   game.bonusPayout += payout;
   game.bonusTickets += tickets;
+  game.bonusTicketCapHit = game.bonusTicketCapHit || isTicketCapped(payout, tickets);
   game.bonusBallsScored += 1;
 
   if (payout > 0) {
@@ -2377,6 +2409,8 @@ function buildRoundResult() {
     mainPayout: game.mainPayout,
     bonusPayout: game.bonusPayout,
     bonusBalls: game.bonusBallsScored,
+    ticketCapHit: game.mainTicketCapHit || game.bonusTicketCapHit,
+    ticketCap: Number.isFinite(ticketCap()) ? ticketCap() : 0,
   };
 }
 
@@ -2460,13 +2494,14 @@ function resolveLanding() {
   const index = getSlotIndex(ball.x);
   const won = game.litSlots.has(index);
   const payout = won ? game.bet * game.multiplier : 0;
-  const tickets = Math.floor(payout / 30);
+  const tickets = payoutTickets(payout);
   game.landingResolved = true;
   game.mainResolved = true;
   game.mainDestroyed = false;
   game.mainWon = won;
   game.mainPayout = payout;
   game.mainTickets = tickets;
+  game.mainTicketCapHit = isTicketCapped(payout, tickets);
   game.mainSlot = index;
   game.lastSlot = index;
   game.flashSlot = index;
