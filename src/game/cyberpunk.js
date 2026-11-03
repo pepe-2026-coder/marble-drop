@@ -604,22 +604,47 @@ export function drawCyberMarquee(ctx, now, table) {
 
 /* ── Peg field ───────────────────────────────────────────── */
 
-export function drawCyberPegs(ctx, now, pegs, table) {
+/**
+ * `mode` splits the peg field into a cached base pass and a live pass:
+ *  - "base": field haze + ordinary neon dome pins (they never move).
+ *  - "dynamic": the flickering diamond splitters (the table's signature
+ *    animation) and the short impact glow on any pin that was just hit.
+ *  - "full": both, used by the table-preview renderer.
+ */
+export function drawCyberPegs(ctx, now, pegs, table, mode = "full") {
   const palette = paletteOf(table);
+  const drawBase = mode !== "dynamic";
+  const drawDynamic = mode !== "base";
 
-  // Faint field haze.
-  const haze = ctx.createLinearGradient(0, 340, 0, 890);
-  haze.addColorStop(0, `rgba(${palette.primaryRgb}, 0.035)`);
-  haze.addColorStop(0.6, "rgba(0, 0, 0, 0)");
-  haze.addColorStop(1, `rgba(${palette.secondaryRgb}, 0.035)`);
-  ctx.fillStyle = haze;
-  ctx.fillRect(88, 330, 496, 560);
+  if (drawBase) {
+    // Faint field haze.
+    const haze = ctx.createLinearGradient(0, 340, 0, 890);
+    haze.addColorStop(0, `rgba(${palette.primaryRgb}, 0.035)`);
+    haze.addColorStop(0.6, "rgba(0, 0, 0, 0)");
+    haze.addColorStop(1, `rgba(${palette.secondaryRgb}, 0.035)`);
+    ctx.fillStyle = haze;
+    ctx.fillRect(88, 330, 496, 560);
 
-  for (const peg of pegs) {
-    if (peg.kind === "splitter") {
-      drawSplitterPin(ctx, peg, now, palette);
-    } else {
+    for (const peg of pegs) {
+      if (peg.kind === "splitter") continue;
+      // A resize can rebuild the layer mid-round. Bake the pin without its
+      // transient impact glow so a stale halo is never burned into the base.
+      const glow = peg.glow;
+      peg.glow = 0;
       drawNeonDomePin(ctx, peg, now, palette);
+      peg.glow = glow;
+    }
+  }
+
+  if (drawDynamic) {
+    for (const peg of pegs) {
+      if (peg.kind === "splitter") {
+        drawSplitterPin(ctx, peg, now, palette);
+      } else if (peg.glow > 0.01) {
+        // Redraw only the handful of pins with a live glow, which overlays the
+        // baked body with the same highlight the full pass would have drawn.
+        drawNeonDomePin(ctx, peg, now, palette);
+      }
     }
   }
 }
@@ -751,324 +776,355 @@ function drawNeonDomePin(ctx, peg, now, palette) {
 
 /* ── Slots ───────────────────────────────────────────────── */
 
-export function drawCyberSlots(ctx, now, game, table) {
+export function drawCyberSlots(ctx, now, game, table, mode = "full") {
   const palette = paletteOf(table);
-  const isActiveRound = game.phase !== "idle" && game.litSlots.size > 0;
+  const drawBase = mode !== "dynamic";
+  const drawDynamic = mode !== "base";
 
   ctx.save();
 
-  // Recessed channel.
-  const recess = ctx.createLinearGradient(0, SLOT.top - 8, 0, SLOT.floor + 8);
-  recess.addColorStop(0, "rgba(8, 16, 32, 0.2)");
-  recess.addColorStop(0.5, "rgba(5, 10, 22, 0.7)");
-  recess.addColorStop(1, "rgba(3, 6, 14, 0.24)");
-  ctx.fillStyle = recess;
-  ctx.fillRect(SLOT.x0 - 2, SLOT.top - 6, SLOT.x1 - SLOT.x0 + 4, SLOT.floor - SLOT.top + 12);
+  if (drawBase) {
+    // Recessed channel.
+    const recess = ctx.createLinearGradient(0, SLOT.top - 8, 0, SLOT.floor + 8);
+    recess.addColorStop(0, "rgba(8, 16, 32, 0.2)");
+    recess.addColorStop(0.5, "rgba(5, 10, 22, 0.7)");
+    recess.addColorStop(1, "rgba(3, 6, 14, 0.24)");
+    ctx.fillStyle = recess;
+    ctx.fillRect(SLOT.x0 - 2, SLOT.top - 6, SLOT.x1 - SLOT.x0 + 4, SLOT.floor - SLOT.top + 12);
 
-  for (let i = 0; i < SLOT.count; i += 1) {
-    const x = SLOT.x0 + i * SLOT.width;
-    const centerX = x + SLOT.width / 2;
-    const revealed = game.litReveal.has(i) && now >= game.litReveal.get(i);
-    const lit = isActiveRound && game.litSlots.has(i) && revealed;
-    const flash = game.flashSlot === i && now - game.flashAt < 850;
-    const pulse = 0.65 + Math.sin(now * 0.0046 + i * 0.9) * 0.35;
+    for (let i = 0; i < SLOT.count; i += 1) {
+      const x = SLOT.x0 + i * SLOT.width;
+      const centerX = x + SLOT.width / 2;
 
-    if (i % 2 === 1) {
-      ctx.fillStyle = "rgba(120, 200, 255, 0.018)";
-      ctx.fillRect(x + 1, SLOT.top + 2, SLOT.width - 2, SLOT.floor - SLOT.top - 3);
-    }
+      if (i % 2 === 1) {
+        ctx.fillStyle = "rgba(120, 200, 255, 0.018)";
+        ctx.fillRect(x + 1, SLOT.top + 2, SLOT.width - 2, SLOT.floor - SLOT.top - 3);
+      }
 
-    if (lit) {
-      const beam = ctx.createLinearGradient(0, SLOT.top - 34, 0, SLOT.floor);
-      beam.addColorStop(0, `rgba(${palette.primaryRgb}, ${0.04 + pulse * 0.04})`);
-      beam.addColorStop(0.35, `rgba(${palette.primaryRgb}, ${0.22 + pulse * 0.12})`);
-      beam.addColorStop(1, `rgba(${palette.secondaryRgb}, ${0.1 + pulse * 0.05})`);
-      ctx.fillStyle = beam;
-      ctx.fillRect(x + 2, SLOT.top - 34, SLOT.width - 4, SLOT.floor - SLOT.top + 34);
-
-      const pocket = ctx.createLinearGradient(0, SLOT.top, 0, SLOT.floor);
-      pocket.addColorStop(0, `rgba(${palette.primaryRgb}, ${0.34 + pulse * 0.08})`);
-      pocket.addColorStop(0.66, `rgba(${palette.secondaryRgb}, 0.12)`);
-      pocket.addColorStop(1, `rgba(${palette.secondaryRgb}, 0.02)`);
-      ctx.fillStyle = pocket;
-      ctx.fillRect(x + 2, SLOT.top, SLOT.width - 4, SLOT.floor - SLOT.top);
-
-      ctx.strokeStyle = `rgba(${palette.primaryRgb}, ${0.46 + pulse * 0.3})`;
-      ctx.lineWidth = 1.4;
-      ctx.strokeRect(x + 3, SLOT.top + 2, SLOT.width - 6, SLOT.floor - SLOT.top - 6);
-
-      ctx.fillStyle = `rgba(${palette.tertiaryRgb}, ${0.72 + pulse * 0.2})`;
-      ctx.beginPath();
-      ctx.moveTo(centerX, SLOT.top - 5);
-      ctx.lineTo(centerX - 4.6, SLOT.top - 13);
-      ctx.lineTo(centerX + 4.6, SLOT.top - 13);
-      ctx.closePath();
-      ctx.fill();
-
-      const haloR = 30 + pulse * 8;
-      const halo = ctx.createRadialGradient(centerX, SLOT.top + 23, 0, centerX, SLOT.top + 23, haloR);
-      halo.addColorStop(0, `rgba(255, 255, 255, ${0.8 * pulse})`);
-      halo.addColorStop(0.35, `rgba(${palette.primaryRgb}, ${0.34 * pulse})`);
-      halo.addColorStop(1, `rgba(${palette.primaryRgb}, 0)`);
-      ctx.fillStyle = halo;
-      ctx.beginPath();
-      ctx.arc(centerX, SLOT.top + 23, haloR, 0, TAU);
-      ctx.fill();
-
-      ctx.save();
-      ctx.shadowColor = palette.primary;
-      ctx.shadowBlur = 18;
-      ctx.fillStyle = "#f4ffff";
-      ctx.beginPath();
-      ctx.arc(centerX, SLOT.top + 23, 5.2, 0, TAU);
-      ctx.fill();
-      ctx.restore();
-
-      ctx.strokeStyle = `rgba(${palette.primaryRgb}, 0.7)`;
-      ctx.lineWidth = 1.1;
-      ctx.beginPath();
-      ctx.arc(centerX, SLOT.top + 23, 7.2, 0, TAU);
-      ctx.stroke();
-
-      ctx.save();
-      ctx.shadowColor = palette.secondary;
-      ctx.shadowBlur = 12;
-      ctx.fillStyle = "#ffffff";
-      ctx.font = '900 18px "Avenir Next", "PingFang SC", sans-serif';
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(`×${game.multiplier}`, centerX, SLOT.top + 57);
-      ctx.restore();
-    } else {
+      // Unlit bulb; a lit pocket paints over it.
       ctx.fillStyle = "rgba(150, 210, 255, 0.22)";
       ctx.beginPath();
       ctx.arc(centerX, SLOT.top + 23, 2.3, 0, TAU);
       ctx.fill();
+
+      ctx.fillStyle = "rgba(140, 180, 220, 0.32)";
+      ctx.font = '600 9px "SFMono-Regular", monospace';
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(i + 1).padStart(2, "0"), centerX, SLOT.floor - 10);
     }
 
-    if (flash) {
-      const u = clamp((now - game.flashAt) / 850, 0, 1);
-      ctx.fillStyle = `rgba(${palette.primaryRgb}, ${(1 - u) * 0.24})`;
-      ctx.fillRect(x + 2, SLOT.top - 10, SLOT.width - 4, SLOT.floor - SLOT.top + 10);
-      ctx.strokeStyle = `rgba(${palette.primaryRgb}, ${(1 - u) * 0.72})`;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x + 2, SLOT.top - 10, SLOT.width - 4, SLOT.floor - SLOT.top + 10);
+    // Dividers.
+    ctx.lineCap = "round";
+    for (let i = 1; i < SLOT.count; i += 1) {
+      const x = SLOT.x0 + i * SLOT.width;
+      ctx.strokeStyle = "rgba(12, 26, 46, 0.94)";
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(x, SLOT.top);
+      ctx.lineTo(x, SLOT.floor);
+      ctx.stroke();
+      ctx.strokeStyle = `rgba(${palette.primaryRgb}, 0.32)`;
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(x - 0.6, SLOT.top + 1);
+      ctx.lineTo(x - 0.6, SLOT.floor - 1);
+      ctx.stroke();
+      ctx.fillStyle = `rgba(${palette.primaryRgb}, 0.4)`;
+      ctx.beginPath();
+      ctx.arc(x, SLOT.top, 2.3, 0, TAU);
+      ctx.fill();
     }
 
-    ctx.fillStyle = lit ? `rgba(${palette.tertiaryRgb}, 0.9)` : "rgba(140, 180, 220, 0.32)";
-    ctx.font = '600 9px "SFMono-Regular", monospace';
+    // Rails.
+    ctx.strokeStyle = `rgba(${palette.primaryRgb}, 0.46)`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(SLOT.x0, SLOT.top);
+    ctx.lineTo(SLOT.x1, SLOT.top);
+    ctx.stroke();
+    ctx.strokeStyle = `rgba(${palette.secondaryRgb}, 0.3)`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(SLOT.x0, SLOT.floor);
+    ctx.lineTo(SLOT.x1, SLOT.floor);
+    ctx.stroke();
+
+    ctx.fillStyle = `rgba(${palette.primaryRgb}, 0.36)`;
+    ctx.font = '700 7px "SFMono-Regular", monospace';
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
-    ctx.fillText(String(i + 1).padStart(2, "0"), centerX, SLOT.floor - 10);
+    ctx.fillText(
+      table?.variant === "abyss" ? "P R I Z E   P O O L" : "L U C K Y   S L O T S",
+      333,
+      SLOT.top - 23,
+    );
   }
 
-  // Dividers.
-  ctx.lineCap = "round";
-  for (let i = 1; i < SLOT.count; i += 1) {
-    const x = SLOT.x0 + i * SLOT.width;
-    ctx.strokeStyle = "rgba(12, 26, 46, 0.94)";
-    ctx.lineWidth = 2.4;
-    ctx.beginPath();
-    ctx.moveTo(x, SLOT.top);
-    ctx.lineTo(x, SLOT.floor);
-    ctx.stroke();
-    ctx.strokeStyle = `rgba(${palette.primaryRgb}, 0.32)`;
-    ctx.lineWidth = 0.8;
-    ctx.beginPath();
-    ctx.moveTo(x - 0.6, SLOT.top + 1);
-    ctx.lineTo(x - 0.6, SLOT.floor - 1);
-    ctx.stroke();
-    ctx.fillStyle = `rgba(${palette.primaryRgb}, 0.4)`;
-    ctx.beginPath();
-    ctx.arc(x, SLOT.top, 2.3, 0, TAU);
-    ctx.fill();
+  if (drawDynamic) {
+    const isActiveRound = game.phase !== "idle" && game.litSlots.size > 0;
+    for (let i = 0; i < SLOT.count; i += 1) {
+      const x = SLOT.x0 + i * SLOT.width;
+      const centerX = x + SLOT.width / 2;
+      const revealed = game.litReveal.has(i) && now >= game.litReveal.get(i);
+      const lit = isActiveRound && game.litSlots.has(i) && revealed;
+      const flash = game.flashSlot === i && now - game.flashAt < 850;
+      if (!lit && !flash) continue;
+      const pulse = 0.65 + Math.sin(now * 0.0046 + i * 0.9) * 0.35;
+
+      if (lit) {
+        const beam = ctx.createLinearGradient(0, SLOT.top - 34, 0, SLOT.floor);
+        beam.addColorStop(0, `rgba(${palette.primaryRgb}, ${0.04 + pulse * 0.04})`);
+        beam.addColorStop(0.35, `rgba(${palette.primaryRgb}, ${0.22 + pulse * 0.12})`);
+        beam.addColorStop(1, `rgba(${palette.secondaryRgb}, ${0.1 + pulse * 0.05})`);
+        ctx.fillStyle = beam;
+        ctx.fillRect(x + 2, SLOT.top - 34, SLOT.width - 4, SLOT.floor - SLOT.top + 34);
+
+        const pocket = ctx.createLinearGradient(0, SLOT.top, 0, SLOT.floor);
+        pocket.addColorStop(0, `rgba(${palette.primaryRgb}, ${0.34 + pulse * 0.08})`);
+        pocket.addColorStop(0.66, `rgba(${palette.secondaryRgb}, 0.12)`);
+        pocket.addColorStop(1, `rgba(${palette.secondaryRgb}, 0.02)`);
+        ctx.fillStyle = pocket;
+        ctx.fillRect(x + 2, SLOT.top, SLOT.width - 4, SLOT.floor - SLOT.top);
+
+        ctx.strokeStyle = `rgba(${palette.primaryRgb}, ${0.46 + pulse * 0.3})`;
+        ctx.lineWidth = 1.4;
+        ctx.strokeRect(x + 3, SLOT.top + 2, SLOT.width - 6, SLOT.floor - SLOT.top - 6);
+
+        ctx.fillStyle = `rgba(${palette.tertiaryRgb}, ${0.72 + pulse * 0.2})`;
+        ctx.beginPath();
+        ctx.moveTo(centerX, SLOT.top - 5);
+        ctx.lineTo(centerX - 4.6, SLOT.top - 13);
+        ctx.lineTo(centerX + 4.6, SLOT.top - 13);
+        ctx.closePath();
+        ctx.fill();
+
+        const haloR = 30 + pulse * 8;
+        const halo = ctx.createRadialGradient(centerX, SLOT.top + 23, 0, centerX, SLOT.top + 23, haloR);
+        halo.addColorStop(0, `rgba(255, 255, 255, ${0.8 * pulse})`);
+        halo.addColorStop(0.35, `rgba(${palette.primaryRgb}, ${0.34 * pulse})`);
+        halo.addColorStop(1, `rgba(${palette.primaryRgb}, 0)`);
+        ctx.fillStyle = halo;
+        ctx.beginPath();
+        ctx.arc(centerX, SLOT.top + 23, haloR, 0, TAU);
+        ctx.fill();
+
+        ctx.save();
+        ctx.shadowColor = palette.primary;
+        ctx.shadowBlur = 18;
+        ctx.fillStyle = "#f4ffff";
+        ctx.beginPath();
+        ctx.arc(centerX, SLOT.top + 23, 5.2, 0, TAU);
+        ctx.fill();
+        ctx.restore();
+
+        ctx.strokeStyle = `rgba(${palette.primaryRgb}, 0.7)`;
+        ctx.lineWidth = 1.1;
+        ctx.beginPath();
+        ctx.arc(centerX, SLOT.top + 23, 7.2, 0, TAU);
+        ctx.stroke();
+
+        ctx.save();
+        ctx.shadowColor = palette.secondary;
+        ctx.shadowBlur = 12;
+        ctx.fillStyle = "#ffffff";
+        ctx.font = '900 18px "Avenir Next", "PingFang SC", sans-serif';
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(`\u00d7${game.multiplier}`, centerX, SLOT.top + 57);
+        ctx.restore();
+
+        ctx.fillStyle = `rgba(${palette.tertiaryRgb}, 0.9)`;
+        ctx.font = '600 9px "SFMono-Regular", monospace';
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(String(i + 1).padStart(2, "0"), centerX, SLOT.floor - 10);
+      }
+
+      if (flash) {
+        const u = clamp((now - game.flashAt) / 850, 0, 1);
+        ctx.fillStyle = `rgba(${palette.primaryRgb}, ${(1 - u) * 0.24})`;
+        ctx.fillRect(x + 2, SLOT.top - 10, SLOT.width - 4, SLOT.floor - SLOT.top + 10);
+        ctx.strokeStyle = `rgba(${palette.primaryRgb}, ${(1 - u) * 0.72})`;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + 2, SLOT.top - 10, SLOT.width - 4, SLOT.floor - SLOT.top + 10);
+      }
+    }
   }
-
-  // Rails.
-  ctx.strokeStyle = `rgba(${palette.primaryRgb}, 0.46)`;
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(SLOT.x0, SLOT.top);
-  ctx.lineTo(SLOT.x1, SLOT.top);
-  ctx.stroke();
-  ctx.strokeStyle = `rgba(${palette.secondaryRgb}, 0.3)`;
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(SLOT.x0, SLOT.floor);
-  ctx.lineTo(SLOT.x1, SLOT.floor);
-  ctx.stroke();
-
-  ctx.fillStyle = `rgba(${palette.primaryRgb}, 0.36)`;
-  ctx.font = '700 7px "SFMono-Regular", monospace';
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(
-    table?.variant === "abyss" ? "P R I Z E   P O O L" : "L U C K Y   S L O T S",
-    333,
-    SLOT.top - 23,
-  );
 
   ctx.restore();
 }
 
 /* ── Launch lane / ramp / gate ───────────────────────────── */
 
-export function drawCyberLaunchLane(ctx, now, game, table) {
+export function drawCyberLaunchLane(ctx, now, game, table, mode = "full") {
+  const drawBase = mode !== "dynamic";
+  const drawDynamic = mode !== "base";
   const palette = paletteOf(table);
 
-  const lane = ctx.createLinearGradient(584, 0, 638, 0);
-  lane.addColorStop(0, "rgba(5, 12, 25, 0.9)");
-  lane.addColorStop(0.55, "rgba(11, 24, 46, 0.68)");
-  lane.addColorStop(1, "rgba(4, 9, 20, 0.92)");
-  ctx.fillStyle = lane;
-  ctx.fillRect(584, 270, 54, 900);
+  if (drawBase) {
+    const lane = ctx.createLinearGradient(584, 0, 638, 0);
+    lane.addColorStop(0, "rgba(5, 12, 25, 0.9)");
+    lane.addColorStop(0.55, "rgba(11, 24, 46, 0.68)");
+    lane.addColorStop(1, "rgba(4, 9, 20, 0.92)");
+    ctx.fillStyle = lane;
+    ctx.fillRect(584, 270, 54, 900);
 
-  ctx.save();
-  ctx.strokeStyle = `rgba(${palette.primaryRgb}, 0.38)`;
-  ctx.lineWidth = 2;
-  ctx.lineCap = "round";
-  for (let i = 0; i < 4; i += 1) {
-    const y = 620 + i * 26;
+    ctx.save();
+    ctx.strokeStyle = `rgba(${palette.primaryRgb}, 0.38)`;
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    for (let i = 0; i < 4; i += 1) {
+      const y = 620 + i * 26;
+      ctx.beginPath();
+      ctx.moveTo(601, y + 6);
+      ctx.lineTo(611, y - 2);
+      ctx.lineTo(621, y + 6);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Divider rail.
+    ctx.save();
+    const rail = ctx.createLinearGradient(578, 0, 592, 0);
+    rail.addColorStop(0, "rgba(2, 6, 14, 0.9)");
+    rail.addColorStop(0.42, "#163052");
+    rail.addColorStop(0.58, "#0a1628");
+    rail.addColorStop(1, "rgba(2, 6, 14, 0.9)");
+    ctx.strokeStyle = rail;
+    ctx.lineWidth = 7;
+    ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(601, y + 6);
-    ctx.lineTo(611, y - 2);
-    ctx.lineTo(621, y + 6);
+    ctx.moveTo(584, LANE.dividerTop);
+    ctx.lineTo(584, LANE.dividerBottom);
     ctx.stroke();
-  }
-  ctx.restore();
 
-  // Divider rail.
-  ctx.save();
-  const rail = ctx.createLinearGradient(578, 0, 592, 0);
-  rail.addColorStop(0, "rgba(2, 6, 14, 0.9)");
-  rail.addColorStop(0.42, "#163052");
-  rail.addColorStop(0.58, "#0a1628");
-  rail.addColorStop(1, "rgba(2, 6, 14, 0.9)");
-  ctx.strokeStyle = rail;
-  ctx.lineWidth = 7;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  ctx.moveTo(584, LANE.dividerTop);
-  ctx.lineTo(584, LANE.dividerBottom);
-  ctx.stroke();
-
-  ctx.strokeStyle = `rgba(${palette.primaryRgb}, 0.7)`;
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  ctx.moveTo(581.3, LANE.dividerTop + 5);
-  ctx.lineTo(581.3, LANE.dividerBottom - 5);
-  ctx.stroke();
-
-  ctx.strokeStyle = `rgba(${palette.secondaryRgb}, 0.28)`;
-  ctx.lineWidth = 0.8;
-  ctx.beginPath();
-  ctx.moveTo(587, LANE.dividerTop + 16);
-  ctx.lineTo(587, LANE.dividerBottom - 16);
-  ctx.stroke();
-
-  for (let y = 330; y < 1020; y += 86) {
-    ctx.fillStyle = `rgba(${palette.primaryRgb}, 0.5)`;
+    ctx.strokeStyle = `rgba(${palette.primaryRgb}, 0.7)`;
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
-    ctx.arc(584, y, 1.5, 0, TAU);
-    ctx.fill();
-  }
-  ctx.restore();
+    ctx.moveTo(581.3, LANE.dividerTop + 5);
+    ctx.lineTo(581.3, LANE.dividerBottom - 5);
+    ctx.stroke();
 
-  ctx.strokeStyle = `rgba(${palette.primaryRgb}, 0.5)`;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.arc(611, 279, 23, Math.PI * 1.08, Math.PI * 1.92);
-  ctx.stroke();
+    ctx.strokeStyle = `rgba(${palette.secondaryRgb}, 0.28)`;
+    ctx.lineWidth = 0.8;
+    ctx.beginPath();
+    ctx.moveTo(587, LANE.dividerTop + 16);
+    ctx.lineTo(587, LANE.dividerBottom - 16);
+    ctx.stroke();
 
-  ctx.fillStyle = `rgba(${palette.primaryRgb}, 0.62)`;
-  ctx.font = '700 6.5px "SFMono-Regular", monospace';
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText("LAUNCH", 611, 306);
+    for (let y = 330; y < 1020; y += 86) {
+      ctx.fillStyle = `rgba(${palette.primaryRgb}, 0.5)`;
+      ctx.beginPath();
+      ctx.arc(584, y, 1.5, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
 
-  if (game.phase === "idle" && game.gate < 0.05) {
+    ctx.strokeStyle = `rgba(${palette.primaryRgb}, 0.5)`;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(611, 279, 23, Math.PI * 1.08, Math.PI * 1.92);
+    ctx.stroke();
+
+    ctx.fillStyle = `rgba(${palette.primaryRgb}, 0.62)`;
+    ctx.font = '700 6.5px "SFMono-Regular", monospace';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("LAUNCH", 611, 306);
+
+    }
+
+  if (drawDynamic && game.phase === "idle" && game.gate < 0.05) {
     ctx.fillStyle = `rgba(${palette.secondaryRgb}, 0.45)`;
     ctx.font = '600 7px "PingFang SC", sans-serif';
     ctx.fillText("限位器", 611, 1037);
   }
 }
 
-export function drawCyberReturnRamp(ctx, now, game, table) {
+export function drawCyberReturnRamp(ctx, now, game, table, mode = "full") {
+  const drawBase = mode !== "dynamic";
+  const drawDynamic = mode !== "base";
   const palette = paletteOf(table);
+  if (drawBase) {
 
-  // Lower recess.
-  const lower = ctx.createLinearGradient(0, SLOT.floor, 0, 1180);
-  lower.addColorStop(0, "rgba(8, 18, 34, 0.72)");
-  lower.addColorStop(0.7, "rgba(4, 9, 20, 0.5)");
-  lower.addColorStop(1, "rgba(2, 5, 12, 0.8)");
-  ctx.fillStyle = lower;
-  ctx.beginPath();
-  ctx.moveTo(82, SLOT.floor);
-  ctx.lineTo(INNER.right, SLOT.floor);
-  ctx.lineTo(INNER.right, INNER.bottom);
-  ctx.lineTo(82, INNER.bottom);
-  ctx.closePath();
-  ctx.fill();
-
-  const rampGradient = ctx.createLinearGradient(0, RAMP.y0, 0, RAMP.y1 + 22);
-  rampGradient.addColorStop(0, "rgba(16, 36, 66, 0.42)");
-  rampGradient.addColorStop(1, "rgba(4, 9, 20, 0.2)");
-  ctx.fillStyle = rampGradient;
-  ctx.beginPath();
-  ctx.moveTo(88, 1005);
-  ctx.lineTo(RAMP.x0, RAMP.y0);
-  ctx.lineTo(RAMP.x1, RAMP.y1);
-  ctx.lineTo(INNER.right, RAMP.y1 + 18);
-  ctx.lineTo(INNER.right, 1140);
-  ctx.lineTo(88, 1140);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.save();
-  ctx.strokeStyle = `rgba(${palette.primaryRgb}, 0.09)`;
-  ctx.lineWidth = 1;
-  for (let x = 122; x < 540; x += 33) {
-    const y = lerp(RAMP.y0, RAMP.y1, (x - RAMP.x0) / (RAMP.x1 - RAMP.x0));
+    // Lower recess.
+    const lower = ctx.createLinearGradient(0, SLOT.floor, 0, 1180);
+    lower.addColorStop(0, "rgba(8, 18, 34, 0.72)");
+    lower.addColorStop(0.7, "rgba(4, 9, 20, 0.5)");
+    lower.addColorStop(1, "rgba(2, 5, 12, 0.8)");
+    ctx.fillStyle = lower;
     ctx.beginPath();
-    ctx.moveTo(x, y + 15);
-    ctx.lineTo(x + 15, y + 4);
-    ctx.stroke();
-  }
-  ctx.restore();
+    ctx.moveTo(82, SLOT.floor);
+    ctx.lineTo(INNER.right, SLOT.floor);
+    ctx.lineTo(INNER.right, INNER.bottom);
+    ctx.lineTo(82, INNER.bottom);
+    ctx.closePath();
+    ctx.fill();
 
-  ctx.save();
-  ctx.lineCap = "round";
-  ctx.shadowColor = palette.primary;
-  ctx.shadowBlur = 12;
-  ctx.strokeStyle = `rgba(${palette.primaryRgb}, 0.72)`;
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.moveTo(RAMP.x0, RAMP.y0);
-  ctx.quadraticCurveTo(360, 1066, RAMP.x1, RAMP.y1);
-  ctx.stroke();
-  ctx.shadowBlur = 0;
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.58)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(RAMP.x0, RAMP.y0 - 2);
-  ctx.quadraticCurveTo(360, 1064, RAMP.x1, RAMP.y1 - 2);
-  ctx.stroke();
-  ctx.restore();
-
-  ctx.fillStyle = `rgba(${palette.primaryRgb}, 0.5)`;
-  ctx.font = '700 7px "SFMono-Regular", monospace';
-  ctx.textAlign = "left";
-  ctx.textBaseline = "middle";
-  ctx.fillText("RETURN", 114, 1096);
-  for (let i = 0; i < 3; i += 1) {
+    const rampGradient = ctx.createLinearGradient(0, RAMP.y0, 0, RAMP.y1 + 22);
+    rampGradient.addColorStop(0, "rgba(16, 36, 66, 0.42)");
+    rampGradient.addColorStop(1, "rgba(4, 9, 20, 0.2)");
+    ctx.fillStyle = rampGradient;
     ctx.beginPath();
-    ctx.moveTo(183 + i * 16, 1088);
-    ctx.lineTo(191 + i * 16, 1096);
-    ctx.lineTo(183 + i * 16, 1104);
-    ctx.strokeStyle = `rgba(${palette.secondaryRgb}, 0.3)`;
-    ctx.lineWidth = 1.3;
+    ctx.moveTo(88, 1005);
+    ctx.lineTo(RAMP.x0, RAMP.y0);
+    ctx.lineTo(RAMP.x1, RAMP.y1);
+    ctx.lineTo(INNER.right, RAMP.y1 + 18);
+    ctx.lineTo(INNER.right, 1140);
+    ctx.lineTo(88, 1140);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.save();
+    ctx.strokeStyle = `rgba(${palette.primaryRgb}, 0.09)`;
+    ctx.lineWidth = 1;
+    for (let x = 122; x < 540; x += 33) {
+      const y = lerp(RAMP.y0, RAMP.y1, (x - RAMP.x0) / (RAMP.x1 - RAMP.x0));
+      ctx.beginPath();
+      ctx.moveTo(x, y + 15);
+      ctx.lineTo(x + 15, y + 4);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    ctx.save();
+    ctx.lineCap = "round";
+    ctx.shadowColor = palette.primary;
+    ctx.shadowBlur = 12;
+    ctx.strokeStyle = `rgba(${palette.primaryRgb}, 0.72)`;
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(RAMP.x0, RAMP.y0);
+    ctx.quadraticCurveTo(360, 1066, RAMP.x1, RAMP.y1);
     ctx.stroke();
-  }
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.58)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(RAMP.x0, RAMP.y0 - 2);
+    ctx.quadraticCurveTo(360, 1064, RAMP.x1, RAMP.y1 - 2);
+    ctx.stroke();
+    ctx.restore();
+
+    ctx.fillStyle = `rgba(${palette.primaryRgb}, 0.5)`;
+    ctx.font = '700 7px "SFMono-Regular", monospace';
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText("RETURN", 114, 1096);
+    for (let i = 0; i < 3; i += 1) {
+      ctx.beginPath();
+      ctx.moveTo(183 + i * 16, 1088);
+      ctx.lineTo(191 + i * 16, 1096);
+      ctx.lineTo(183 + i * 16, 1104);
+      ctx.strokeStyle = `rgba(${palette.secondaryRgb}, 0.3)`;
+      ctx.lineWidth = 1.3;
+      ctx.stroke();
+    }
+
+    }
+
+  if (!drawDynamic) return;
 
   // Gate assembly.
   const gateOpen = easeInOutCubic(game.gate);
