@@ -2807,7 +2807,10 @@ function drawMarquee(now) {
 
 /* ── Render: pegs & slots ────────────────────────────────── */
 
-function drawPegField(now) {
+/* The 95 brass pegs never move. Baking them (gradients + drop shadows) into
+   the static layer removes ~95 radial gradients and ~95 shadow blurs from
+   every single frame; only the short-lived impact glow stays dynamic. */
+function drawPegFieldBase() {
   // A faint baseline atmosphere behind the bottom pegs
   const fieldGlow = ctx.createLinearGradient(0, 360, 0, 890);
   fieldGlow.addColorStop(0, "rgba(255, 251, 240, 0)");
@@ -2816,17 +2819,6 @@ function drawPegField(now) {
   ctx.fillRect(90, 360, 490, 530);
 
   for (const peg of pegs) {
-    const pulse = peg.glow;
-    if (pulse > 0.01) {
-      const glow = ctx.createRadialGradient(peg.x, peg.y, 1, peg.x, peg.y, 23 + pulse * 10);
-      glow.addColorStop(0, `rgba(231, 181, 102, ${0.32 * pulse})`);
-      glow.addColorStop(1, "rgba(231, 181, 102, 0)");
-      ctx.fillStyle = glow;
-      ctx.beginPath();
-      ctx.arc(peg.x, peg.y, 23 + pulse * 10, 0, TAU);
-      ctx.fill();
-    }
-
     ctx.save();
     ctx.shadowColor = "rgba(53, 37, 18, 0.32)";
     ctx.shadowBlur = 5;
@@ -2851,6 +2843,20 @@ function drawPegField(now) {
     ctx.fillStyle = "rgba(255, 244, 220, 0.42)";
     ctx.beginPath();
     ctx.arc(peg.x - peg.r * 0.34, peg.y - peg.r * 0.38, peg.r * 0.2, 0, TAU);
+    ctx.fill();
+  }
+}
+
+function drawPegGlows() {
+  for (const peg of pegs) {
+    const pulse = peg.glow;
+    if (pulse <= 0.01) continue;
+    const glow = ctx.createRadialGradient(peg.x, peg.y, 1, peg.x, peg.y, 23 + pulse * 10);
+    glow.addColorStop(0, `rgba(231, 181, 102, ${0.32 * pulse})`);
+    glow.addColorStop(1, "rgba(231, 181, 102, 0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(peg.x, peg.y, 23 + pulse * 10, 0, TAU);
     ctx.fill();
 
     if (pulse > 0.02) {
@@ -3051,7 +3057,9 @@ function drawTools(now) {
   }
 }
 
-function drawSlots(now) {
+/* Same split as the peg field: slot housing, dividers, rails and numbers
+   are baked once; only the lit pockets and the win flash animate. */
+function drawSlotsBase() {
   ctx.save();
 
   // Recessed slot channel
@@ -3062,108 +3070,26 @@ function drawSlots(now) {
   ctx.fillStyle = recess;
   ctx.fillRect(SLOT.x0, SLOT.top - 4, SLOT.x1 - SLOT.x0, SLOT.floor - SLOT.top + 8);
 
-  const isActiveRound = game.phase !== "idle" && game.litSlots.size > 0;
-  const nowMs = now;
-
   for (let i = 0; i < SLOT.count; i += 1) {
     const x = SLOT.x0 + i * SLOT.width;
-    const revealed = game.litReveal.has(i) && nowMs >= game.litReveal.get(i);
-    const lit = isActiveRound && game.litSlots.has(i) && revealed;
-    const flash = game.flashSlot === i && now - game.flashAt < 850;
     const centerX = x + SLOT.width / 2;
-    const pulse = 0.68 + Math.sin(now * 0.0042 + i * 0.8) * 0.32;
 
     if (i % 2 === 1) {
       ctx.fillStyle = "rgba(75, 58, 38, 0.018)";
       ctx.fillRect(x + 1.2, SLOT.top + 2, SLOT.width - 2.4, SLOT.floor - SLOT.top - 3);
     }
 
-    if (lit) {
-      // Warm column of light
-      const beam = ctx.createLinearGradient(0, SLOT.top - 34, 0, SLOT.floor);
-      beam.addColorStop(0, `rgba(255, 228, 159, ${0.05 + pulse * 0.04})`);
-      beam.addColorStop(0.3, `rgba(238, 184, 88, ${0.25 + pulse * 0.12})`);
-      beam.addColorStop(1, `rgba(221, 59, 44, ${0.1 + pulse * 0.05})`);
-      ctx.fillStyle = beam;
-      ctx.fillRect(x + 2, SLOT.top - 34, SLOT.width - 4, SLOT.floor - SLOT.top + 34);
+    // Unlit bulb. A lit pocket simply paints over it.
+    ctx.fillStyle = "rgba(83, 68, 49, 0.3)";
+    ctx.beginPath();
+    ctx.arc(centerX, SLOT.top + 23, 2.3, 0, TAU);
+    ctx.fill();
 
-      const pocket = ctx.createLinearGradient(0, SLOT.top, 0, SLOT.floor);
-      pocket.addColorStop(0, `rgba(238, 184, 88, ${0.32 + pulse * 0.08})`);
-      pocket.addColorStop(0.68, "rgba(221, 59, 44, 0.1)");
-      pocket.addColorStop(1, "rgba(221, 59, 44, 0.015)");
-      ctx.fillStyle = pocket;
-      ctx.fillRect(x + 2, SLOT.top, SLOT.width - 4, SLOT.floor - SLOT.top);
-
-      // Inner border of the lit pocket
-      ctx.strokeStyle = `rgba(217, 133, 41, ${0.42 + pulse * 0.28})`;
-      ctx.lineWidth = 1.4;
-      ctx.strokeRect(x + 3, SLOT.top + 2, SLOT.width - 6, SLOT.floor - SLOT.top - 6);
-
-      // Pointer hanging above the winning pocket
-      ctx.fillStyle = `rgba(173, 53, 32, ${0.72 + pulse * 0.2})`;
-      ctx.beginPath();
-      ctx.moveTo(centerX, SLOT.top - 5);
-      ctx.lineTo(centerX - 4.6, SLOT.top - 13);
-      ctx.lineTo(centerX + 4.6, SLOT.top - 13);
-      ctx.closePath();
-      ctx.fill();
-
-      // Lamp halo
-      const haloR = 30 + pulse * 7;
-      const halo = ctx.createRadialGradient(centerX, SLOT.top + 23, 0, centerX, SLOT.top + 23, haloR);
-      halo.addColorStop(0, `rgba(255, 221, 132, ${0.86 * pulse})`);
-      halo.addColorStop(0.35, `rgba(231, 181, 102, ${0.32 * pulse})`);
-      halo.addColorStop(1, "rgba(231, 181, 102, 0)");
-      ctx.fillStyle = halo;
-      ctx.beginPath();
-      ctx.arc(centerX, SLOT.top + 23, haloR, 0, TAU);
-      ctx.fill();
-    }
-
-    if (flash) {
-      const u = clamp((now - game.flashAt) / 850, 0, 1);
-      ctx.fillStyle = `rgba(255, 241, 198, ${(1 - u) * 0.26})`;
-      ctx.fillRect(x + 2, SLOT.top - 10, SLOT.width - 4, SLOT.floor - SLOT.top + 10);
-      ctx.strokeStyle = `rgba(231, 181, 102, ${(1 - u) * 0.65})`;
-      ctx.lineWidth = 2;
-      ctx.strokeRect(x + 2, SLOT.top - 10, SLOT.width - 4, SLOT.floor - SLOT.top + 10);
-    }
-
-    // Divider light / slot number
-    ctx.fillStyle = lit ? "rgba(118, 73, 29, 0.7)" : "rgba(100, 83, 61, 0.34)";
+    ctx.fillStyle = "rgba(100, 83, 61, 0.34)";
     ctx.font = '600 9px "SFMono-Regular", monospace';
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(String(i + 1).padStart(2, "0"), centerX, SLOT.floor - 10);
-
-    if (lit) {
-      // The bulb
-      ctx.save();
-      ctx.shadowColor = "rgba(255, 196, 91, 0.95)";
-      ctx.shadowBlur = 15;
-      ctx.fillStyle = "#ffe1a0";
-      ctx.beginPath();
-      ctx.arc(centerX, SLOT.top + 23, 5.2, 0, TAU);
-      ctx.fill();
-      ctx.restore();
-
-      ctx.strokeStyle = "rgba(133, 73, 25, 0.65)";
-      ctx.lineWidth = 1.1;
-      ctx.beginPath();
-      ctx.arc(centerX, SLOT.top + 23, 7.1, 0, TAU);
-      ctx.stroke();
-
-      ctx.fillStyle = "#99251b";
-      ctx.font = '900 18px "Avenir Next", "PingFang SC", sans-serif';
-      ctx.textAlign = "center";
-      ctx.textBaseline = "middle";
-      ctx.fillText(`×${game.multiplier}`, centerX, SLOT.top + 57);
-    } else {
-      ctx.fillStyle = "rgba(83, 68, 49, 0.3)";
-      ctx.beginPath();
-      ctx.arc(centerX, SLOT.top + 23, 2.3, 0, TAU);
-      ctx.fill();
-    }
   }
 
   // Slot dividers
@@ -3213,9 +3139,108 @@ function drawSlots(now) {
   ctx.restore();
 }
 
+function drawSlotHighlights(now) {
+  const isActiveRound = game.phase !== "idle" && game.litSlots.size > 0;
+  const flashActive = game.flashSlot !== null && now - game.flashAt < 850;
+  if (!isActiveRound && !flashActive) return;
+
+  ctx.save();
+  for (let i = 0; i < SLOT.count; i += 1) {
+    const x = SLOT.x0 + i * SLOT.width;
+    const revealed = game.litReveal.has(i) && now >= game.litReveal.get(i);
+    const lit = isActiveRound && game.litSlots.has(i) && revealed;
+    const flash = game.flashSlot === i && now - game.flashAt < 850;
+    if (!lit && !flash) continue;
+
+    const centerX = x + SLOT.width / 2;
+    const pulse = 0.68 + Math.sin(now * 0.0042 + i * 0.8) * 0.32;
+
+    if (lit) {
+      // Warm column of light
+      const beam = ctx.createLinearGradient(0, SLOT.top - 34, 0, SLOT.floor);
+      beam.addColorStop(0, `rgba(255, 228, 159, ${0.05 + pulse * 0.04})`);
+      beam.addColorStop(0.3, `rgba(238, 184, 88, ${0.25 + pulse * 0.12})`);
+      beam.addColorStop(1, `rgba(221, 59, 44, ${0.1 + pulse * 0.05})`);
+      ctx.fillStyle = beam;
+      ctx.fillRect(x + 2, SLOT.top - 34, SLOT.width - 4, SLOT.floor - SLOT.top + 34);
+
+      const pocket = ctx.createLinearGradient(0, SLOT.top, 0, SLOT.floor);
+      pocket.addColorStop(0, `rgba(238, 184, 88, ${0.32 + pulse * 0.08})`);
+      pocket.addColorStop(0.68, "rgba(221, 59, 44, 0.1)");
+      pocket.addColorStop(1, "rgba(221, 59, 44, 0.015)");
+      ctx.fillStyle = pocket;
+      ctx.fillRect(x + 2, SLOT.top, SLOT.width - 4, SLOT.floor - SLOT.top);
+
+      // Inner border of the lit pocket
+      ctx.strokeStyle = `rgba(217, 133, 41, ${0.42 + pulse * 0.28})`;
+      ctx.lineWidth = 1.4;
+      ctx.strokeRect(x + 3, SLOT.top + 2, SLOT.width - 6, SLOT.floor - SLOT.top - 6);
+
+      // Pointer hanging above the winning pocket
+      ctx.fillStyle = `rgba(173, 53, 32, ${0.72 + pulse * 0.2})`;
+      ctx.beginPath();
+      ctx.moveTo(centerX, SLOT.top - 5);
+      ctx.lineTo(centerX - 4.6, SLOT.top - 13);
+      ctx.lineTo(centerX + 4.6, SLOT.top - 13);
+      ctx.closePath();
+      ctx.fill();
+
+      // Lamp halo
+      const haloR = 30 + pulse * 7;
+      const halo = ctx.createRadialGradient(centerX, SLOT.top + 23, 0, centerX, SLOT.top + 23, haloR);
+      halo.addColorStop(0, `rgba(255, 221, 132, ${0.86 * pulse})`);
+      halo.addColorStop(0.35, `rgba(231, 181, 102, ${0.32 * pulse})`);
+      halo.addColorStop(1, "rgba(231, 181, 102, 0)");
+      ctx.fillStyle = halo;
+      ctx.beginPath();
+      ctx.arc(centerX, SLOT.top + 23, haloR, 0, TAU);
+      ctx.fill();
+
+      // Lit slot number
+      ctx.fillStyle = "rgba(118, 73, 29, 0.7)";
+      ctx.font = '600 9px "SFMono-Regular", monospace';
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(String(i + 1).padStart(2, "0"), centerX, SLOT.floor - 10);
+
+      // The bulb
+      ctx.save();
+      ctx.shadowColor = "rgba(255, 196, 91, 0.95)";
+      ctx.shadowBlur = 15;
+      ctx.fillStyle = "#ffe1a0";
+      ctx.beginPath();
+      ctx.arc(centerX, SLOT.top + 23, 5.2, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+
+      ctx.strokeStyle = "rgba(133, 73, 25, 0.65)";
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.arc(centerX, SLOT.top + 23, 7.1, 0, TAU);
+      ctx.stroke();
+
+      ctx.fillStyle = "#99251b";
+      ctx.font = '900 18px "Avenir Next", "PingFang SC", sans-serif';
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(`\u00d7${game.multiplier}`, centerX, SLOT.top + 57);
+    }
+
+    if (flash) {
+      const u = clamp((now - game.flashAt) / 850, 0, 1);
+      ctx.fillStyle = `rgba(255, 241, 198, ${(1 - u) * 0.26})`;
+      ctx.fillRect(x + 2, SLOT.top - 10, SLOT.width - 4, SLOT.floor - SLOT.top + 10);
+      ctx.strokeStyle = `rgba(231, 181, 102, ${(1 - u) * 0.65})`;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(x + 2, SLOT.top - 10, SLOT.width - 4, SLOT.floor - SLOT.top + 10);
+    }
+  }
+  ctx.restore();
+}
+
 /* ── Render: lane, return ramp, gate, spring ─────────────── */
 
-function drawLaunchLane(now) {
+function drawLaunchLaneBase() {
   // Lane paper
   const lane = ctx.createLinearGradient(584, 0, 638, 0);
   lane.addColorStop(0, "rgba(102, 76, 44, 0.055)");
@@ -3281,15 +3306,20 @@ function drawLaunchLane(now) {
   ctx.textBaseline = "middle";
   ctx.fillText("LAUNCH", 611, 306);
 
+}
+
+function drawLaunchHint() {
   // Little down-guide arrow above the cup, only while idle
   if (game.phase === "idle" && game.gate < 0.05) {
     ctx.fillStyle = "rgba(116, 89, 52, 0.32)";
     ctx.font = '600 7px "PingFang SC", sans-serif';
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
     ctx.fillText("限位器", 611, 1037);
   }
 }
 
-function drawReturnRamp(now) {
+function drawReturnRampBase() {
   // Lower recess
   const lower = ctx.createLinearGradient(0, SLOT.floor, 0, 1180);
   lower.addColorStop(0, "rgba(91, 70, 45, 0.075)");
@@ -3366,6 +3396,9 @@ function drawReturnRamp(now) {
     ctx.stroke();
   }
 
+}
+
+function drawGate(now) {
   // Gate / limiter assembly
   const gateOpen = easeInOutCubic(game.gate);
   const gateY = GATE.y;
@@ -3955,23 +3988,22 @@ function draw(now) {
     ctx.translate(randomRange(-amplitude, amplitude), randomRange(-amplitude, amplitude));
   }
 
-  drawStaticLayer(now);
+  drawStaticLayer();
   if (activeTable.art === "cyberpunk") {
-    drawCyberReturnRamp(ctx, now, game, activeTable);
-    drawCyberSlots(ctx, now, game, activeTable);
+    drawCyberReturnRamp(ctx, now, game, activeTable, "dynamic");
+    drawCyberSlots(ctx, now, game, activeTable, "dynamic");
+    drawCyberPegs(ctx, now, pegs, activeTable, "dynamic");
     drawCyberMarquee(ctx, now, activeTable);
-    drawCyberPegs(ctx, now, pegs, activeTable);
     drawObstacles(ctx, obstacles, now, activeTable.palette, { clipMainField: true });
-    drawCyberLaunchLane(ctx, now, game, activeTable);
+    drawCyberLaunchLane(ctx, now, game, activeTable, "dynamic");
     drawCyberFocusGlow(ctx, now, game, activeTable);
   } else {
-    drawReturnRamp(now);
-    drawSlots(now);
-    drawMarquee(now);
-    drawPegField(now);
+    drawSlotHighlights(now);
+    drawPegGlows();
     drawTools(now);
     drawObstacles(ctx, obstacles, now, activeTable.palette, { clipMainField: true });
-    drawLaunchLane(now);
+    drawLaunchHint();
+    drawGate(now);
     drawFocusGlow(now);
   }
   drawParticles();
@@ -4135,20 +4167,71 @@ function update(now, dt) {
 }
 
 function frame(now) {
-  if (gameScreen?.hidden) {
-    lastFrame = now;
-    requestAnimationFrame(frame);
+  if (!loopRunning) return;
+  // Leaving the board (menu, shop, options) or backgrounding the app must not
+  // keep a 60 Hz timer alive. The old loop only skipped drawing, which still
+  // woke the CPU/GPU every vsync and warmed the phone for no reason.
+  if (gameScreen?.hidden || document.hidden) {
+    stopLoop();
     return;
   }
   const dt = Math.min(0.033, Math.max(0, (now - lastFrame) / 1000));
   lastFrame = now;
   update(now, dt);
+
+  // Ambient animation (pulsing lamps, patrolling cars, the abyss rotors) is
+  // the only thing moving between rounds. Half the refresh rate in that state
+  // is invisible to the player and halves the raster + texture-upload cost.
+  // Anything the player is actively doing still gets the full 60 fps.
+  if (!isHighActivity() && now - lastPaintAt < IDLE_FRAME_MS) {
+    rafHandle = requestAnimationFrame(frame);
+    return;
+  }
+  lastPaintAt = now;
   draw(now);
-  requestAnimationFrame(frame);
+  rafHandle = requestAnimationFrame(frame);
+}
+
+const IDLE_FRAME_MS = 1000 / 30;
+let loopRunning = false;
+let rafHandle = 0;
+let lastPaintAt = 0;
+
+function isHighActivity() {
+  if (game.phase === "starting" || game.phase === "charging" || game.phase === "flying" || game.phase === "returning") {
+    return true;
+  }
+  if (game.wheel.active || payoutFx.active) return true;
+  if (game.drop || game.returnAnim || game.springRelease) return true;
+  if (game.gate !== game.gateTarget) return true;
+  if (game.shake > 0.02) return true;
+  if (particles.length > 0 || bonusBalls.length > 0) return true;
+  if (ball.trail.length > 0 && game.phase === "flying") return true;
+  return false;
+}
+
+function startLoop() {
+  if (loopRunning) return;
+  if (gameScreen?.hidden || document.hidden) return;
+  loopRunning = true;
+  lastFrame = performance.now();
+  lastPaintAt = 0;
+  rafHandle = requestAnimationFrame(frame);
+}
+
+function stopLoop() {
+  loopRunning = false;
+  cancelAnimationFrame(rafHandle);
+  rafHandle = 0;
 }
 
 /* ── Canvas resolution & layout ──────────────────────────── */
 
+/* One opaque snapshot holds the cabinet *and* every board fixture that never
+   moves: brass/neon pins, slot housing and dividers, marquee, return ramp and
+   launch lane. The per-frame pass is then a single texture blit plus only the
+   handful of things that actually animate (lit pockets, impact glows, gate,
+   spring, obstacles, marble, particles). */
 function rebuildStaticLayer() {
   if (!canvas.width || !canvas.height) return;
   const buffer = document.createElement("canvas");
@@ -4158,21 +4241,31 @@ function rebuildStaticLayer() {
   bufferCtx.setTransform(canvasScale, 0, 0, canvasScale, 0, 0);
   const previousCtx = ctx;
   ctx = bufferCtx;
+  const now = performance.now();
   try {
-    if (activeTable.art === "cyberpunk") drawCyberCabinet(ctx, performance.now(), activeTable);
-    else drawCabinet(performance.now());
+    if (activeTable.art === "cyberpunk") {
+      drawCyberCabinet(ctx, now, activeTable);
+      drawCyberReturnRamp(ctx, now, game, activeTable, "base");
+      drawCyberSlots(ctx, now, game, activeTable, "base");
+      drawCyberPegs(ctx, now, pegs, activeTable, "base");
+      drawCyberLaunchLane(ctx, now, game, activeTable, "base");
+    } else {
+      drawCabinet(now);
+      drawReturnRampBase();
+      drawSlotsBase();
+      drawMarquee(0);
+      drawPegFieldBase();
+      drawLaunchLaneBase();
+    }
   } finally {
     ctx = previousCtx;
   }
   staticLayer = buffer;
 }
 
-function drawStaticLayer(now) {
-  if (!staticLayer) {
-    if (activeTable.art === "cyberpunk") drawCyberCabinet(ctx, now, activeTable);
-    else drawCabinet(now);
-    return;
-  }
+function drawStaticLayer() {
+  if (!staticLayer) rebuildStaticLayer();
+  if (!staticLayer) return;
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.drawImage(staticLayer, 0, 0);
@@ -4193,11 +4286,14 @@ function fitMachine() {
   machine.style.width = `${width}px`;
   machine.style.height = `${height}px`;
 
-  // Match the backing store to the actual device pixels instead of always
-  // rendering at a fixed 2×. On a phone this is close to a 1:1 pixel mapping,
-  // which keeps the many gradients/shadows at a smooth frame rate while still
-  // looking crisp on Retina displays.
-  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  // Match the backing store to the actual device pixels, but never render more
+  // than MAX_DEVICE_RATIO device pixels per CSS pixel. A phone reports 3×, and
+  // repainting a 3× canvas 60 times a second is the single largest heat source:
+  // it triples the fill rate, the gradient/shadow raster work and the texture
+  // upload for almost no visible gain on a 360–430 px wide board. 2× stays
+  // crisp while cutting the pixel count by ~55%.
+  const MAX_DEVICE_RATIO = 2;
+  const dpr = Math.min(window.devicePixelRatio || 1, MAX_DEVICE_RATIO);
   const desiredScale = clamp((width * dpr) / W, 1, 2);
   const pixelWidth = Math.round(W * desiredScale);
   const pixelHeight = Math.round(H * desiredScale);
@@ -4206,6 +4302,8 @@ function fitMachine() {
     canvas.height = pixelHeight;
     canvasScale = pixelWidth / W;
     ctx.setTransform(canvasScale, 0, 0, canvasScale, 0, 0);
+    rebuildStaticLayer();
+  } else if (!staticLayer) {
     rebuildStaticLayer();
   }
 }
@@ -4217,7 +4315,12 @@ window.addEventListener("marble:game-shown", () => {
   requestAnimationFrame(() => {
     fitMachine();
     requestAnimationFrame(fitMachine);
+    startLoop();
   });
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) stopLoop();
+  else startLoop();
 });
 
 /* ── Input ───────────────────────────────────────────────── */
@@ -4793,8 +4896,9 @@ function initUI() {
   dockPlay.hidden = true;
   fitMachine();
   requestAnimationFrame(fitMachine);
+  if (!staticLayer) rebuildStaticLayer();
 }
 
 initUI();
 lastFrame = performance.now();
-requestAnimationFrame(frame);
+startLoop();
