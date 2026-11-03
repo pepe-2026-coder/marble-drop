@@ -313,6 +313,12 @@ const game = {
   springRelease: null,
   flashSlot: null,
   flashAt: 0,
+  // Suspense presentation only: 0 = calm, 1 = maximum focus. It drives the
+  // slow motion, the stage darkening and the landing guide. It never feeds
+  // back into physics, so trajectories and payouts stay identical.
+  suspense: 0,
+  nearMiss: null,
+  nearMissAt: 0,
   returnAnim: null,
   returnPos: null,
   shake: 0,
@@ -759,6 +765,59 @@ function launchSpeed(power) {
 
 function getSlotIndex(x) {
   return clamp(Math.floor((x - SLOT.x0) / SLOT.width), 0, SLOT.count - 1);
+}
+
+function slotCenterX(index) {
+  return SLOT.x0 + (index + 0.5) * SLOT.width;
+}
+
+/* ── Suspense helpers ────────────────────────────────────── */
+
+/**
+ * How much the current flight deserves the "last-second" treatment.
+ * 0 = play it straight, 1 = the marble is deep in the slot bank and lined up
+ * with a lit pocket. The depth curve is shaped so the effect creeps in over
+ * the last stretch instead of snapping on at the gate line.
+ */
+function landingFocusStrength() {
+  if (game.phase !== "flying" || game.landingResolved || ball.hidden) return 0;
+  if (ball.x >= MAIN_RIGHT || ball.y < 600) return 0;
+  const depth = clamp((ball.y - 600) / (SLOT.sensorY - 600), 0, 1);
+  let proximity = 0;
+  for (const slot of game.litSlots) {
+    const distance = Math.abs(ball.x - slotCenterX(slot)) / SLOT.width;
+    proximity = Math.max(proximity, clamp((2.6 - distance) / 1.8, 0, 1));
+  }
+  // Near the pocket mouth the marble visibly hangs for a beat.
+  const clinch = ball.y > SLOT.top - 80 ? 0.22 : 0;
+  return clamp(Math.pow(depth, 1.4) * proximity + clinch * proximity, 0, 1);
+}
+
+/**
+ * A near miss is only worth calling out when the marble actually hugged the
+ * divider of a lit pocket — an adjacent slot on the far side of its own lane
+ * is not "so close". Returns the lit slot index or null.
+ */
+function findNearMissLitSlot(index, x) {
+  let best = null;
+  let bestGap = Infinity;
+  for (const lit of game.litSlots) {
+    const gap = Math.abs(lit - index);
+    if (gap !== 1 || gap >= bestGap) continue;
+    const edgeX = SLOT.x0 + Math.max(lit, index) * SLOT.width;
+    if (Math.abs(x - edgeX) > SLOT.width * 0.55) continue;
+    bestGap = gap;
+    best = lit;
+  }
+  return best;
+}
+
+function markNearMiss(index, x, now) {
+  const lit = findNearMissLitSlot(index, x);
+  if (lit === null) return;
+  game.nearMiss = { landed: index, lit };
+  game.nearMissAt = now;
+  game.shake = Math.min(0.9, game.shake + 0.14);
 }
 
 /* ── Particles ───────────────────────────────────────────── */
@@ -1740,6 +1799,9 @@ function startRound() {
   game.landingResolved = false;
   game.lastSlot = null;
   game.flashSlot = null;
+  game.suspense = 0;
+  game.nearMiss = null;
+  game.nearMissAt = 0;
   game.leftLane = false;
   game.flightStartedAt = 0;
   game.gate = 0;
@@ -2421,6 +2483,7 @@ function resolveLanding() {
     audio.win(game.multiplier >= 8);
     vibrate([18, 40, 25]);
   } else {
+    markNearMiss(index, ball.x, game.flashAt);
     vibrate(18);
     window.setTimeout(() => audio.lose(), 160);
   }
@@ -3976,6 +4039,242 @@ function drawFocusGlow(now) {
   ctx.fill();
 }
 
+/* ── Render: suspense layer ──────────────────────────────── */
+
+const NEAR_MISS_MS = 1300;
+
+/** Darkens the peg chamber and puts a key light on the falling marble. */
+function drawStageFocus() {
+  const s = clamp(game.suspense, 0, 1);
+  if (s < 0.02) return;
+  const deep = hexToRgb(activeTable.palette.deep);
+
+  // Top-down stage wash: the empty peg rows go dark, the slot bank stays lit.
+  const shade = ctx.createLinearGradient(0, 0, 0, SLOT.top);
+  shade.addColorStop(0, `rgba(${deep}, ${0.62 * s})`);
+  shade.addColorStop(0.55, `rgba(${deep}, ${0.34 * s})`);
+  shade.addColorStop(0.9, `rgba(${deep}, ${0.06 * s})`);
+  shade.addColorStop(1, `rgba(${deep}, 0)`);
+  ctx.fillStyle = shade;
+  ctx.fillRect(0, 0, W, SLOT.top);
+
+  // Side falloff frames the playfield without touching the pockets.
+  if (s > 0.12) {
+    const edge = ctx.createLinearGradient(0, 0, W, 0);
+    edge.addColorStop(0, `rgba(${deep}, ${0.5 * s})`);
+    edge.addColorStop(0.16, `rgba(${deep}, 0)`);
+    edge.addColorStop(0.84, `rgba(${deep}, 0)`);
+    edge.addColorStop(1, `rgba(${deep}, ${0.5 * s})`);
+    ctx.fillStyle = edge;
+    ctx.fillRect(0, 0, W, H);
+  }
+
+  // Warm rim on the goal line, pulsing with the tension.
+  const rimY = SLOT.top - 2;
+  const rim = ctx.createLinearGradient(0, rimY - 18, 0, rimY + 8);
+  rim.addColorStop(0, "rgba(255, 216, 140, 0)");
+  rim.addColorStop(0.55, `rgba(255, 216, 140, ${0.34 * s})`);
+  rim.addColorStop(1, "rgba(255, 216, 140, 0)");
+  ctx.fillStyle = rim;
+  ctx.fillRect(SLOT.x0, rimY - 18, SLOT.x1 - SLOT.x0, 26);
+
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  const key = ctx.createRadialGradient(ball.x, ball.y, 2, ball.x, ball.y, 66);
+  key.addColorStop(0, `rgba(255, 228, 160, ${0.26 * s})`);
+  key.addColorStop(0.42, `rgba(255, 200, 112, ${0.11 * s})`);
+  key.addColorStop(1, "rgba(255, 200, 112, 0)");
+  ctx.fillStyle = key;
+  ctx.beginPath();
+  ctx.arc(ball.x, ball.y, 66, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+}
+
+/**
+ * The landing sight: a flowing dashed line from the marble down to the pocket
+ * it is currently above, framed by brackets on the pocket mouth. Gold when the
+ * pocket is lit, red when it is not — this is the "aim" readout the drop was
+ * missing.
+ */
+function drawLandingGuide(now) {
+  if (game.phase !== "flying" || game.landingResolved || ball.hidden) return;
+  if (ball.x >= MAIN_RIGHT || ball.y < 620 || ball.y > SLOT.floor - 8) return;
+
+  const fade = clamp((ball.y - 620) / 150, 0, 1);
+  const index = getSlotIndex(clamp(ball.x, SLOT.x0 + 1, SLOT.x1 - 1));
+  const lit = game.litSlots.has(index);
+  const centerX = slotCenterX(index);
+  const mouthY = SLOT.top - 6;
+  const topY = Math.min(ball.y + BALL_R + 8, mouthY - 18);
+  const rgb = hexToRgb(lit ? activeTable.palette.primary : activeTable.palette.secondary);
+  const pulse = lit ? 0.62 + Math.sin(now * 0.011) * 0.38 : 0.46;
+  const half = SLOT.width * 0.44;
+
+  ctx.save();
+
+  if (mouthY - topY > 12) {
+    // Two passes: a soft neon halo plus a hot core, so the sight reads on both
+    // the cream paper table and the dark cyberpunk cabinets.
+    const width = lit ? 2.4 : 1.9;
+    ctx.setLineDash([5, 7]);
+    ctx.lineDashOffset = -now * 0.055;
+
+    const halo = ctx.createLinearGradient(0, topY, 0, mouthY);
+    halo.addColorStop(0, `rgba(${rgb}, 0)`);
+    halo.addColorStop(0.35, `rgba(${rgb}, ${0.16 * fade * pulse})`);
+    halo.addColorStop(1, `rgba(${rgb}, ${0.34 * fade * pulse})`);
+    ctx.strokeStyle = halo;
+    ctx.lineWidth = width * 3.4;
+    ctx.beginPath();
+    ctx.moveTo(centerX, topY);
+    ctx.lineTo(centerX, mouthY);
+    ctx.stroke();
+
+    const core = ctx.createLinearGradient(0, topY, 0, mouthY);
+    core.addColorStop(0, `rgba(255, 248, 226, 0)`);
+    core.addColorStop(
+      0.3,
+      lit
+        ? `rgba(255, 248, 226, ${0.72 * fade * pulse})`
+        : `rgba(${rgb}, ${0.8 * fade * pulse})`,
+    );
+    core.addColorStop(1, lit ? `rgba(255, 252, 238, ${0.95 * fade * pulse})` : `rgba(${rgb}, ${1 * fade * pulse})`);
+    ctx.strokeStyle = core;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.moveTo(centerX, topY);
+    ctx.lineTo(centerX, mouthY);
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+  }
+
+  // Brackets on the pocket mouth.
+  ctx.strokeStyle = `rgba(${rgb}, ${0.72 * fade})`;
+  ctx.lineWidth = 1.8;
+  ctx.beginPath();
+  ctx.moveTo(centerX - half, mouthY - 11);
+  ctx.lineTo(centerX - half, mouthY);
+  ctx.lineTo(centerX - half + 6, mouthY);
+  ctx.moveTo(centerX + half, mouthY - 11);
+  ctx.lineTo(centerX + half, mouthY);
+  ctx.lineTo(centerX + half - 6, mouthY);
+  ctx.stroke();
+
+  // Mouth flash at the instant the marble crosses the gate line.
+  const crossing = clamp(1 - Math.abs(ball.y - SLOT.top) / 42, 0, 1);
+  if (crossing > 0) {
+    const flash = ctx.createLinearGradient(0, SLOT.top - 14, 0, SLOT.top + 16);
+    flash.addColorStop(0, `rgba(${rgb}, 0)`);
+    flash.addColorStop(0.5, `rgba(${rgb}, ${0.5 * crossing})`);
+    flash.addColorStop(1, `rgba(${rgb}, 0)`);
+    ctx.fillStyle = flash;
+    ctx.fillRect(centerX - half, SLOT.top - 14, half * 2, 30);
+  }
+
+  ctx.restore();
+}
+
+/** "One slot away" callout on a losing drop that hugged a lit pocket. */
+function drawNearMiss(now) {
+  const near = game.nearMiss;
+  if (!near) return;
+  const age = now - game.nearMissAt;
+  if (age < 0 || age > NEAR_MISS_MS) return;
+
+  const t = clamp(age / NEAR_MISS_MS, 0, 1);
+  const fade = 1 - t;
+  const litX = slotCenterX(near.lit);
+  const edgeX = SLOT.x0 + Math.max(near.lit, near.landed) * SLOT.width;
+  const gold = hexToRgb(activeTable.palette.primary);
+  const danger = hexToRgb(activeTable.palette.secondary);
+
+  ctx.save();
+
+  // Shock ring off the lamp of the pocket that was one slot away.
+  ctx.strokeStyle = `rgba(${gold}, ${0.5 * fade})`;
+  ctx.lineWidth = 0.8 + 2.4 * fade;
+  ctx.beginPath();
+  ctx.arc(litX, SLOT.top + 23, 16 + t * 82, 0, TAU);
+  ctx.stroke();
+
+  // The divider that stopped the marble.
+  const barW = 2 + 2.4 * fade;
+  ctx.fillStyle = `rgba(${danger}, ${0.7 * fade})`;
+  ctx.fillRect(edgeX - barW / 2, SLOT.top - 4, barW, SLOT.floor - SLOT.top + 4);
+  ctx.strokeStyle = `rgba(255, 236, 190, ${0.42 * fade})`;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(edgeX - barW / 2 - 1.5, SLOT.top - 4, barW + 3, SLOT.floor - SLOT.top + 4);
+
+  // Callout chip, rising slightly as it fades.
+  const label = "差一格";
+  ctx.font = '700 15px "PingFang SC", "Avenir Next", sans-serif';
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const chipW = ctx.measureText(label).width + 22;
+  const chipH = 25;
+  const chipY = SLOT.top - 42 - t * 14;
+  ctx.fillStyle = `rgba(14, 9, 10, ${0.7 * fade})`;
+  roundRect(litX - chipW / 2, chipY - chipH / 2, chipW, chipH, 12);
+  ctx.fill();
+  ctx.strokeStyle = `rgba(${gold}, ${0.6 * fade})`;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = `rgba(${gold}, ${Math.min(1, fade * 1.8)})`;
+  ctx.fillText(label, litX, chipY + 1);
+
+  // A thin thread linking the divider to the callout.
+  ctx.strokeStyle = `rgba(${gold}, ${0.32 * fade})`;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(edgeX, SLOT.top - 4);
+  ctx.lineTo(litX, chipY + chipH / 2);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+/**
+ * As the marble drops, the lit pockets charge up: their beams brighten and
+ * the lamps throw a stronger halo. It makes the bank feel like it is reaching
+ * for the ball instead of sitting still behind it.
+ */
+function drawLitPocketCharge() {
+  const s = clamp(game.suspense, 0, 1);
+  if (s < 0.05) return;
+
+  for (const slot of game.litSlots) {
+    const x = SLOT.x0 + slot * SLOT.width;
+    const centerX = slotCenterX(slot);
+
+    const beam = ctx.createLinearGradient(0, SLOT.top - 46, 0, SLOT.floor);
+    beam.addColorStop(0, "rgba(255, 226, 160, 0)");
+    beam.addColorStop(0.42, `rgba(255, 216, 140, ${0.2 * s})`);
+    beam.addColorStop(1, `rgba(255, 216, 140, ${0.05 * s})`);
+    ctx.fillStyle = beam;
+    ctx.fillRect(x + 2, SLOT.top - 46, SLOT.width - 4, SLOT.floor - SLOT.top + 46);
+
+    const haloR = 30 + 12 * s;
+    const halo = ctx.createRadialGradient(centerX, SLOT.top + 23, 0, centerX, SLOT.top + 23, haloR);
+    halo.addColorStop(0, `rgba(255, 232, 176, ${0.5 * s})`);
+    halo.addColorStop(0.4, `rgba(255, 202, 120, ${0.22 * s})`);
+    halo.addColorStop(1, "rgba(255, 202, 120, 0)");
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(centerX, SLOT.top + 23, haloR, 0, TAU);
+    ctx.fill();
+  }
+}
+
+function drawSuspenseOverlay(now) {
+  if (game.phase === "idle") return;
+  drawStageFocus();
+  drawLitPocketCharge();
+  drawLandingGuide(now);
+  drawNearMiss(now);
+}
+
 /* ── Render: master ──────────────────────────────────────── */
 
 function draw(now) {
@@ -4006,6 +4305,9 @@ function draw(now) {
     drawGate(now);
     drawFocusGlow(now);
   }
+  // Suspense sits above the board fixtures but below the marble, so the stage
+  // can dim while the ball and its key light stay bright.
+  drawSuspenseOverlay(now);
   drawParticles();
   drawBonusBalls(now);
   drawBall(now);
@@ -4027,6 +4329,15 @@ function update(now, dt) {
   // Moving cars, spinning rotors and portal cooldowns animate all the time,
   // not just while the marble is in flight.
   updateObstacles(obstacles, dt);
+
+  // Suspense ramp. While the marble sinks toward the slot bank and is lined
+  // up with a lit pocket, the stage pulls focus: the board dims, time slows
+  // and a landing guide locks onto the pocket underneath. Only the presented
+  // frame rate changes — every physics sub-step is still PHYS_STEP, so the
+  // trajectory and the payout are bit-for-bit the same as without it.
+  const focusTarget = landingFocusStrength();
+  const focusRate = focusTarget > game.suspense ? 12 : 5;
+  game.suspense += (focusTarget - game.suspense) * Math.min(1, dt * focusRate);
 
   // Gate easing
   if (Math.abs(game.gate - game.gateTarget) > 0.0001) {
@@ -4063,13 +4374,31 @@ function update(now, dt) {
   // Main ball physics. While the abyss wheel is spinning the marble is held
   // inside the disc, so it neither falls nor re-triggers the sensor.
   if (game.phase === "flying" && !game.wheel.active && !ball.hidden) {
-    let remaining = Math.min(dt, 0.033);
+    let remaining = Math.min(dt, 0.033) * (1 - 0.5 * game.suspense);
     let guard = 0;
     while (remaining > 0 && guard < 12) {
       const step = Math.min(PHYS_STEP, remaining);
       stepBallPhysics(ball, step);
       remaining -= step;
       guard += 1;
+
+      // Landing is resolved on the exact sub-step where the marble crosses the
+      // sensor, not once per frame. The sampled landing x therefore no longer
+      // depends on how many steps a frame happens to run, so the suspense
+      // slow motion cannot change which pocket — or which payout — you get.
+      if (!game.landingResolved) {
+        if (ball.x < MAIN_RIGHT && ball.y > SLOT.sensorY) {
+          resolveLanding();
+          break;
+        }
+        if (ball.vy > 40 && ball.x > MAIN_RIGHT && ball.y > 1040) {
+          // Safety net: a ball that cannot clear the lane falls back into the
+          // launch cup. Treat that as a miss and leave the round aggregation
+          // to the same finalizer used by normal landings.
+          resolveMissedMain();
+          break;
+        }
+      }
 
       // Track the moment the marble actually enters the peg chamber. The
       // vertical launch lane has no overhead hood: the dome does the turning.
@@ -4108,19 +4437,13 @@ function update(now, dt) {
       if (ball.trail.length > 22) ball.trail.shift();
     }
 
-    if (!game.landingResolved) {
-      if (ball.x < MAIN_RIGHT && ball.y > SLOT.sensorY) {
-        resolveLanding();
-      } else if (ball.vy > 40 && ball.x > MAIN_RIGHT && ball.y > 1040) {
-        // Safety net: a ball that cannot clear the lane falls back into the
-        // launch cup. Treat that as a miss and leave the round aggregation to
-        // the same finalizer used by normal landings.
-        resolveMissedMain();
-      } else if (now - game.flightStartedAt > 30000) {
-        ball.x = randomRange(SLOT.x0 + 20, SLOT.x1 - 20);
-        ball.y = SLOT.sensorY + 4;
-        resolveLanding();
-      }
+    // Last-resort fallback for a ball that never settles (wedged by an
+    // obstacle, endless rail bounce). Normal landings resolve inside the
+    // sub-step loop above so the sampled x is frame-rate independent.
+    if (!game.landingResolved && now - game.flightStartedAt > 30000) {
+      ball.x = randomRange(SLOT.x0 + 20, SLOT.x1 - 20);
+      ball.y = SLOT.sensorY + 4;
+      resolveLanding();
     }
   }
 
@@ -4609,6 +4932,8 @@ function snapshot() {
     gate: game.gate,
     leftLane: game.leftLane,
     landingResolved: game.landingResolved,
+    suspense: Number(game.suspense.toFixed(2)),
+    nearMiss: game.nearMiss ? { ...game.nearMiss } : null,
     progress: {
       level: game.progress.level,
       xp: game.progress.xp,
