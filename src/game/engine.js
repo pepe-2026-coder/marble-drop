@@ -109,7 +109,7 @@ const startBtn = document.getElementById("startBtn");
 const startLabel = document.getElementById("startLabel");
 const startBetText = document.getElementById("startBetText");
 const quickRow = document.getElementById("quickRow");
-const refillBtn = document.getElementById("refillBtn");
+const cashOutBtn = document.getElementById("cashOutBtn");
 const playStatus = document.getElementById("playStatus");
 const liveDot = document.getElementById("liveDot");
 const playBet = document.getElementById("playBet");
@@ -288,7 +288,7 @@ function getPadConfig() {
 
 const game = {
   phase: "idle", // idle | starting | ready | charging | flying | returning
-  marbles: account.marbles,
+  marbles: account.playMarbles,
   tickets: account.tickets,
   bet: account.bet,
   progress: defaultProgress(),
@@ -344,6 +344,7 @@ const game = {
   },
   wheelTickets: 0,
   wheelSpins: 0,
+  roundTicketsAwarded: 0,
   mainPayout: 0,
   mainTickets: 0,
   mainSlot: null,
@@ -1003,20 +1004,19 @@ function pickMultiplier() {
   return table[0];
 }
 
-/** Tables can cap the tickets a single payout can mint. The entry table uses
-    this to stay a marble-earning stepping stone instead of a ticket farm. */
+/** Every table shares one per-round ticket cap. The cap starts at 3 and grows
+    by one for each additional table the player has unlocked. Abyss wheel
+    tickets are awarded outside this helper and therefore ignore the cap. */
 function ticketCap() {
-  const cap = Number(activeTable.rules?.ticketCap);
-  return Number.isFinite(cap) ? Math.max(0, Math.floor(cap)) : Infinity;
+  return account.ticketCap;
 }
 
 function payoutTickets(payout) {
   const raw = Math.floor(Math.max(0, payout) / 30);
-  return Math.min(raw, ticketCap());
-}
-
-function isTicketCapped(payout, tickets) {
-  return tickets < Math.floor(Math.max(0, payout) / 30);
+  const remaining = Math.max(0, ticketCap() - game.roundTicketsAwarded);
+  const tickets = Math.min(raw, remaining);
+  game.roundTicketsAwarded += tickets;
+  return { tickets, capped: tickets < raw, raw };
 }
 
 function pickLitSlots(count) {
@@ -1036,8 +1036,9 @@ function saveGame() {
 
 function setMarbles(value, bump = false) {
   const next = Math.max(0, Math.round(Number(value) || 0));
-  account.setMarbles(next);
-  game.marbles = account.marbles;
+  if (account.hasRun) account.setRunMarbles(next);
+  else account.setMarbles(next);
+  game.marbles = account.playMarbles;
   marbleCountEl.textContent = String(game.marbles);
   dockBalanceEl.textContent = String(game.marbles);
   if (bump) bumpNumber(marbleCountEl);
@@ -1052,6 +1053,16 @@ function setTickets(value, bump = false) {
   if (bump) bumpNumber(ticketCountEl);
 }
 
+/** Award tickets that are part of the run's earnings. */
+function awardTickets(count) {
+  const amount = Math.max(0, Math.round(Number(count) || 0));
+  if (amount <= 0) return;
+  account.awardRunTickets(amount);
+  game.tickets = account.tickets;
+  ticketCountEl.textContent = String(game.tickets);
+  bumpNumber(ticketCountEl);
+}
+
 function bumpNumber(el) {
   el.classList.remove("is-bumping");
   void el.offsetWidth;
@@ -1060,8 +1071,9 @@ function bumpNumber(el) {
 }
 
 function updateBetUI() {
+  const hasRun = account.hasRun;
   const maxBet = Math.max(5, Math.min(99, game.marbles));
-  if (game.phase === "idle" && game.marbles >= 5) {
+  if (hasRun && game.phase === "idle" && game.marbles >= 5) {
     game.bet = clamp(game.bet, 5, maxBet);
   }
   betInput.value = String(game.bet);
@@ -1069,11 +1081,13 @@ function updateBetUI() {
   startBetText.textContent = String(game.bet);
   playBet.textContent = String(game.bet);
 
-  const canStart = game.phase === "idle" && game.marbles >= game.bet && game.marbles >= 5;
+  const canStart =
+    hasRun && game.phase === "idle" && game.marbles >= game.bet && game.marbles >= 5;
   startBtn.disabled = !canStart;
-  if (game.phase !== "idle") startLabel.textContent = "游戏进行中";
+  if (!hasRun) startLabel.textContent = "请先开始街机游戏";
+  else if (game.phase !== "idle") startLabel.textContent = "游戏进行中";
   else if (game.marbles < 5) startLabel.textContent = "弹珠不足";
-  else startLabel.textContent = "开始游戏";
+  else startLabel.textContent = "开始投珠";
   betMinus.disabled = game.phase !== "idle" || game.marbles < 5 || game.bet <= 5;
   betPlus.disabled =
     game.phase !== "idle" || game.marbles < 5 || game.bet >= Math.min(99, game.marbles);
@@ -1084,17 +1098,11 @@ function updateBetUI() {
     button.disabled = value > game.marbles;
   });
 
-  const lowFunds = game.marbles < 5 && game.phase === "idle";
-  const useRelief = lowFunds && account.canClaimRelief;
-  const goShop = lowFunds && !useRelief && (account.coins > 0 || account.tickets > 0);
-  refillBtn.hidden = !(useRelief || goShop);
-  refillBtn.textContent = useRelief ? "补助 30 珠" : "去商店";
-  quickRow.classList.toggle("needs-refill", lowFunds);
   dockBalanceEl.textContent = String(game.marbles);
 }
 
 function syncAccountUI(state) {
-  game.marbles = state.marbles;
+  game.marbles = state.run?.active ? state.run.marbles : state.marbles;
   game.tickets = state.tickets;
   if (game.phase === "idle") {
     const maxBet = Math.max(5, Math.min(99, game.marbles));
@@ -1756,7 +1764,7 @@ function showResultCard(result) {
     }
   }
   if (result.ticketCapHit && result.ticketCap > 0) {
-    ticketParts.push(`基础机台单次彩票上限 ${result.ticketCap} 张`);
+    ticketParts.push(`单局彩票上限 ${result.ticketCap} 张`);
   }
   resultTicket.textContent = ticketParts.join(" · ");
 
@@ -1820,6 +1828,7 @@ function resetAbyssRound() {
   game.wheel.outcome = null;
   game.wheelTickets = 0;
   game.wheelSpins = 0;
+  game.roundTicketsAwarded = 0;
   game.mainPayout = 0;
   game.mainTickets = 0;
   game.mainTicketCapHit = false;
@@ -1839,8 +1848,13 @@ function resetAbyssRound() {
 function startRound() {
   audio.init();
   if (game.phase !== "idle") return;
+  if (!account.hasRun) {
+    toast("请先在街机模式中开始一局游戏");
+    window.dispatchEvent(new CustomEvent("marble:home"));
+    return;
+  }
   if (game.marbles < 5) {
-    toast(account.canClaimRelief ? "弹珠不足，先领取补助吧" : "弹珠不足，去商店兑换吧");
+    endRunSession("bankrupt");
     return;
   }
   if (game.bet > game.marbles) {
@@ -2080,11 +2094,15 @@ function findWheelObstacle(wheelId = null) {
 function applyWheelTicket(delta) {
   const amount = Number(delta) || 0;
   if (!amount) return 0;
-  const before = game.tickets;
-  const next = Math.max(0, before + amount);
-  if (next !== before) setTickets(next, true);
-  game.wheelTickets += next - before;
-  return next - before;
+  // Wheel tickets are awarded outside the normal per-round cap.
+  const actual = account.awardRunTickets(amount);
+  game.tickets = account.tickets;
+  if (actual !== 0) {
+    ticketCountEl.textContent = String(game.tickets);
+    bumpNumber(ticketCountEl);
+  }
+  game.wheelTickets += actual;
+  return actual;
 }
 
 function formatTicketDelta(value) {
@@ -2283,15 +2301,16 @@ function resolveBonusLanding(bonusBall, forced = false) {
   const index = getSlotIndex(clamp(bonusBall.x, SLOT.x0 + 4, SLOT.x1 - 4));
   const won = game.litSlots.has(index);
   const payout = won ? game.bet * game.multiplier : 0;
-  const tickets = payoutTickets(payout);
+  const payoutInfo = payoutTickets(payout);
+  const tickets = payoutInfo.tickets;
   game.bonusPayout += payout;
   game.bonusTickets += tickets;
-  game.bonusTicketCapHit = game.bonusTicketCapHit || isTicketCapped(payout, tickets);
+  game.bonusTicketCapHit = game.bonusTicketCapHit || payoutInfo.capped;
   game.bonusBallsScored += 1;
 
   if (payout > 0) {
     setMarbles(game.marbles + payout, true);
-    if (tickets > 0) setTickets(game.tickets + tickets, true);
+    if (tickets > 0) awardTickets(tickets);
     spawnSlotBurst(bonusBall.x, 982, true);
     spawnTicketBurstIfNeeded(tickets);
     audio.win(false);
@@ -2523,14 +2542,15 @@ function resolveLanding() {
   const index = getSlotIndex(ball.x);
   const won = game.litSlots.has(index);
   const payout = won ? game.bet * game.multiplier : 0;
-  const tickets = payoutTickets(payout);
+  const payoutInfo = payoutTickets(payout);
+  const tickets = payoutInfo.tickets;
   game.landingResolved = true;
   game.mainResolved = true;
   game.mainDestroyed = false;
   game.mainWon = won;
   game.mainPayout = payout;
   game.mainTickets = tickets;
-  game.mainTicketCapHit = isTicketCapped(payout, tickets);
+  game.mainTicketCapHit = payoutInfo.capped;
   game.mainSlot = index;
   game.lastSlot = index;
   game.flashSlot = index;
@@ -2538,7 +2558,7 @@ function resolveLanding() {
 
   if (payout > 0) {
     setMarbles(game.marbles + payout, true);
-    if (tickets > 0) setTickets(game.tickets + tickets, true);
+    if (tickets > 0) awardTickets(tickets);
   }
   account.recordRound(won);
 
@@ -2652,26 +2672,155 @@ function finishReturn() {
     if (next !== activeTable.id) applyTable(next, true);
   }
 
-  if (game.marbles < 5) {
-    toast(account.canClaimRelief ? "弹珠不足，可领取 30 颗补助" : "弹珠不足，可前往商店兑换");
+  if (account.hasRun && game.marbles < 5) {
+    endRunSession("bankrupt");
+    return;
   }
   updateBetUI();
 }
 
-function handleLowFunds() {
-  if (game.phase !== "idle") return;
-  if (account.canClaimRelief) {
-    const amount = account.claimRelief();
-    if (amount > 0) {
-      setMarbles(account.marbles, true);
-      toast(`领取补助 ${amount} 颗弹珠`);
-      audio.ticket();
-    }
+let runEnding = false;
+
+function requestEndRun() {
+  if (game.phase !== "idle") {
+    toast("本球结束后再结束游戏");
     return;
   }
-  audio.click();
-  window.dispatchEvent(new CustomEvent("marble:shop"));
+  if (!account.hasRun) return;
+  const returned = game.marbles;
+  const confirmed = window.confirm(
+    `提前结束本局游戏？剩余 ${returned} 颗弹珠会返还到个人账户。`,
+  );
+  if (!confirmed) return;
+  endRunSession("cashout");
 }
+
+/**
+ * Close the active run. The banked marbles go back to the personal wallet and
+ * the shell receives a summary for the settlement screen. All transient board
+ * state is reset so the next run starts from a clean idle table.
+ */
+function endRunSession(reason = "cashout") {
+  if (!account.hasRun || runEnding) return;
+  runEnding = true;
+  clearScheduled();
+  payoutFx.stop();
+  bonusBalls.length = 0;
+  game.result = null;
+  game.returnAnim = null;
+  game.returnPos = null;
+  game.drop = null;
+  game.charge = 0;
+  game.charging = false;
+  game.chargeMode = null;
+  game.pointerId = null;
+  game.gate = 0;
+  game.gateTarget = 0;
+  game.suspense = 0;
+  game.litSlots.clear();
+  game.litReveal.clear();
+  game.flashSlot = null;
+  game.lastSlot = null;
+  activeMagnets.length = 0;
+  activePads.length = 0;
+  particles.length = 0;
+  resetObstacles(obstacles);
+  resetAbyssRound();
+  ball.hidden = false;
+  ball.x = STAGE.x;
+  ball.y = STAGE.y;
+  ball.prevX = STAGE.x;
+  ball.prevY = STAGE.y;
+  ball.vx = 0;
+  ball.vy = 0;
+  ball.trail.length = 0;
+  updateToolTrayUI();
+  hideBanner();
+  hideHint();
+  hideResultCard();
+  hideWheelCallout();
+  setPhase("idle");
+  setPowerUI(0, "ready");
+  setRoundBadge("ready", "等待投珠");
+  setPlayStatus("等待投珠", "本局已结束", false);
+
+  const summary = account.endRun(reason);
+  game.marbles = account.playMarbles;
+  game.tickets = account.tickets;
+  marbleCountEl.textContent = String(game.marbles);
+  ticketCountEl.textContent = String(game.tickets);
+  dockBalanceEl.textContent = String(game.marbles);
+  updateBetUI();
+  runEnding = false;
+  if (summary) {
+    window.dispatchEvent(new CustomEvent("marble:run-ended", { detail: summary }));
+  }
+}
+
+/** Reset board presentation for a freshly started or resumed run. */
+function prepareRunSession() {
+  runEnding = false;
+  clearScheduled();
+  payoutFx.stop();
+  bonusBalls.length = 0;
+  game.round = account.activeRun?.rounds || 0;
+  game.result = null;
+  game.returnAnim = null;
+  game.returnPos = null;
+  game.drop = null;
+  game.charge = 0;
+  game.charging = false;
+  game.chargeMode = null;
+  game.pointerId = null;
+  game.gate = 0;
+  game.gateTarget = 0;
+  game.suspense = 0;
+  game.litSlots.clear();
+  game.litReveal.clear();
+  game.flashSlot = null;
+  game.lastSlot = null;
+  game.landingResolved = false;
+  activeMagnets.length = 0;
+  activePads.length = 0;
+  particles.length = 0;
+  resetObstacles(obstacles);
+  resetAbyssRound();
+  ball.hidden = false;
+  ball.x = STAGE.x;
+  ball.y = STAGE.y;
+  ball.prevX = STAGE.x;
+  ball.prevY = STAGE.y;
+  ball.vx = 0;
+  ball.vy = 0;
+  ball.trail.length = 0;
+  updateToolTrayUI();
+  hideBanner();
+  hideHint();
+  hideResultCard();
+  hideWheelCallout();
+  setPhase("idle");
+  setPowerUI(0, "ready");
+  setRoundBadge("ready", "等待投珠");
+  setPlayStatus("等待投珠", "选择投入后开始", false);
+  game.marbles = account.playMarbles;
+  game.tickets = account.tickets;
+  marbleCountEl.textContent = String(game.marbles);
+  ticketCountEl.textContent = String(game.tickets);
+  dockBalanceEl.textContent = String(game.marbles);
+  if (game.marbles < 5) {
+    endRunSession("bankrupt");
+    return;
+  }
+  updateBetUI();
+}
+
+window.addEventListener("marble:run-started", prepareRunSession);
+window.addEventListener("marble:run-continued", prepareRunSession);
+window.addEventListener("marble:game-shown", () => {
+  if (!account.hasRun) return;
+  game.marbles = account.playMarbles;
+  if (game.phase === "idle" && game.marbles < 5) endRunSession("bankrupt");
+});
 
 /* ── Render: geometry helpers ────────────────────────────── */
 
@@ -4923,16 +5072,17 @@ wsShopPanel.addEventListener("click", (event) => {
   if (button) buyShopItem(button.dataset.shop);
 });
 
-refillBtn.addEventListener("click", () => {
+cashOutBtn.addEventListener("click", () => {
   audio.init();
-  handleLowFunds();
+  audio.click();
+  requestEndRun();
 });
 
 homeBtn.addEventListener("click", () => {
   audio.init();
   audio.click();
   if (game.phase !== "idle") {
-    toast("本局结束后再返回主界面");
+    toast("本球结束后可返回主界面，进度会保留");
     return;
   }
   window.dispatchEvent(new CustomEvent("marble:home"));
@@ -4957,7 +5107,7 @@ helpDialog.addEventListener("click", (event) => {
 });
 
 resetBtn.addEventListener("click", () => {
-  const confirmed = window.confirm("重置本地存档？弹珠将回到 300 颗，游戏币、彩票、母球皮肤、机台和设置都会清空。");
+  const confirmed = window.confirm("重置本地存档？弹珠将回到 300 颗，进行中的街机游戏、游戏币、彩票、母球皮肤、机台和设置都会清空。");
   if (!confirmed) return;
   account.reset();
   closeHelp();
@@ -4994,6 +5144,9 @@ function snapshot() {
     })),
     marbles: game.marbles,
     tickets: game.tickets,
+    ticketCap: ticketCap(),
+    roundTicketsAwarded: game.roundTicketsAwarded,
+    run: account.activeRun ? { ...account.activeRun } : null,
     bet: game.bet,
     round: game.round,
     multiplier: game.multiplier,
@@ -5280,6 +5433,8 @@ window.__MARBLE_DROP__ = {
 /* ── Init ────────────────────────────────────────────────── */
 
 function initUI() {
+  game.marbles = account.playMarbles;
+  game.round = account.activeRun?.rounds || 0;
   marbleCountEl.textContent = String(game.marbles);
   ticketCountEl.textContent = String(game.tickets);
   dockBalanceEl.textContent = String(game.marbles);
