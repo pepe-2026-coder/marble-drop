@@ -388,6 +388,34 @@ const payoutFx = new PayoutAnimation({
 let activeTable = getTable(account.equippedTable || DEFAULT_TABLE_ID);
 let pendingTableId = null;
 
+/* The 720×1240 canvas deliberately leaves a transparent gutter around the
+   cabinet. On phones that gutter used to read as wasted screen on both sides
+   of the table. The board element is now sized to the cabinet silhouette
+   only and the canvas overflows it (see .board-frame in game.css), so the
+   visible cabinet fills the available width.
+
+   Bounds are in canvas units: the cabinet spans x 50…670, the spring knob
+   needs the bottom margin, and the top margin keeps the round badge inside. */
+const BOARD_CROPS = {
+  cyberpunk: { left: 50, right: 670, top: 26 },
+  classic: { left: 50, right: 670, top: 17 },
+};
+
+function boardCrop(table = activeTable) {
+  return BOARD_CROPS[table.art] || BOARD_CROPS.cyberpunk;
+}
+
+/** Keep .board-frame's CSS geometry in sync with the active table's crop. */
+function syncBoardFrame() {
+  const crop = boardCrop();
+  const cropWidth = crop.right - crop.left;
+  const cropHeight = H - crop.top;
+  machine.style.setProperty("--board-frame-left", `${(-crop.left / cropWidth) * 100}%`);
+  machine.style.setProperty("--board-frame-top", `${(-crop.top / cropHeight) * 100}%`);
+  machine.style.setProperty("--board-frame-width", `${(W / cropWidth) * 100}%`);
+  machine.style.setProperty("--board-frame-height", `${(H / cropHeight) * 100}%`);
+}
+
 /* ── World geometry ──────────────────────────────────────── */
 
 const segments = [];
@@ -473,6 +501,7 @@ function buildWorld() {
   obstacles = buildObstacles(activeTable.layout.obstacles || []);
 
   document.body.dataset.table = activeTable.id;
+  syncBoardFrame();
   document.body.style.setProperty("--table-accent", activeTable.palette.primary);
   document.body.style.setProperty("--table-accent-rgb", hexToRgb(activeTable.palette.primary));
   document.body.style.setProperty("--table-second", activeTable.palette.secondary);
@@ -4632,7 +4661,10 @@ function drawStaticLayer() {
 
 function fitMachine() {
   const rect = stageEl.getBoundingClientRect();
-  const ratio = W / H;
+  const crop = boardCrop();
+  const cropWidth = crop.right - crop.left;
+  const cropHeight = H - crop.top;
+  const ratio = cropWidth / cropHeight;
   let height = rect.height;
   let width = height * ratio;
   if (width > rect.width) {
@@ -4644,6 +4676,11 @@ function fitMachine() {
   machine.style.width = `${width}px`;
   machine.style.height = `${height}px`;
 
+  // The canvas overflows the machine box by the transparent crop gutter, so its
+  // backing store has to be sized from the *displayed* canvas width, not from
+  // the box width.
+  const frameWidth = width * (W / cropWidth);
+
   // Match the backing store to the actual device pixels, but never render more
   // than MAX_DEVICE_RATIO device pixels per CSS pixel. A phone reports 3×, and
   // repainting a 3× canvas 60 times a second is the single largest heat source:
@@ -4652,7 +4689,7 @@ function fitMachine() {
   // crisp while cutting the pixel count by ~55%.
   const MAX_DEVICE_RATIO = 2;
   const dpr = Math.min(window.devicePixelRatio || 1, MAX_DEVICE_RATIO);
-  const desiredScale = clamp((width * dpr) / W, 1, 2);
+  const desiredScale = clamp((frameWidth * dpr) / W, 1, 2);
   const pixelWidth = Math.round(W * desiredScale);
   const pixelHeight = Math.round(H * desiredScale);
   if (canvas.width !== pixelWidth || canvas.height !== pixelHeight) {

@@ -95,6 +95,8 @@ input:focus-visible {
 /* ── Header ─────────────────────────────────────────────── */
 
 .hud {
+  position: relative;
+  z-index: 2;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -321,9 +323,19 @@ input:focus-visible {
   flex: 0 0 auto;
   height: 100%;
   width: auto;
-  aspect-ratio: 720 / 1240;
+  /* 画布是 720×1240，但机柜落在 x 50–670、y 26–1240 之间。.machine 只占
+     机柜的可见轮廓，画布由 .board-frame 放大后溢出，透明边距就落到框外了。 */
+  aspect-ratio: 620 / 1214;
   isolation: isolate;
   animation: machine-in 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+.board-frame {
+  position: absolute;
+  top: var(--board-frame-top, -2.14168%);
+  left: var(--board-frame-left, -8.06452%);
+  width: var(--board-frame-width, 116.12903%);
+  height: var(--board-frame-height, 102.14168%);
 }
 
 /* The cabinet shadow used to be `filter: drop-shadow()` on .machine. Because
@@ -335,10 +347,10 @@ input:focus-visible {
   content: "";
   position: absolute;
   z-index: -1;
-  top: 1.37%;
-  right: 7.78%;
-  bottom: 3.71%;
-  left: 7.78%;
+  top: 0.6%;
+  right: 0;
+  bottom: 1.6%;
+  left: 0;
   border-radius: 50% 50% 0 0 / 26.6% 26.6% 0 0;
   box-shadow: 0 26px 48px rgba(0, 0, 0, 0.52);
   pointer-events: none;
@@ -2335,6 +2347,84 @@ input:focus-visible {
   .tool-skip {
     padding: 0 4px;
     font-size: 7px;
+  }
+}
+
+/* Phones: the table is height-limited in portrait, so every pixel the chrome
+   gives back turns directly into a wider board. Drop the dock's title row and
+   tighten both dock states so the cabinet can reach the screen edges. */
+@media (max-width: 480px) {
+  .app {
+    padding-top: max(5px, env(safe-area-inset-top));
+    padding-bottom: max(5px, env(safe-area-inset-bottom));
+    gap: 4px;
+  }
+
+  .hud {
+    min-height: 40px;
+  }
+
+  .brand-mark {
+    width: 32px;
+    height: 32px;
+  }
+
+  .brand-cn {
+    font-size: 18px;
+  }
+
+  .stat strong {
+    font-size: 14px;
+  }
+
+  .icon-btn,
+  .text-btn {
+    height: 34px;
+  }
+
+  .icon-btn {
+    width: 34px;
+  }
+
+  .dock {
+    padding: 8px 11px 7px;
+  }
+
+  .dock-head {
+    display: none;
+  }
+
+  .bet-row {
+    gap: 6px;
+  }
+
+  .start-btn {
+    min-height: 46px;
+  }
+
+  .quick-row {
+    min-height: 22px;
+    margin-top: 5px;
+  }
+
+  /* Keep the play dock the same height as the idle dock, otherwise the board
+     would visibly jump smaller the moment a round starts. */
+  .dock-play {
+    min-height: 74px;
+    padding: 3px;
+  }
+
+  .live-head {
+    min-height: 20px;
+    font-size: 12px;
+  }
+
+  .play-meta {
+    margin-top: 5px;
+  }
+
+  .pull-meter {
+    margin-top: 6px;
   }
 }
 
