@@ -7,11 +7,13 @@ import { DEFAULT_SKIN_ID, isSkinId } from "./game/skins.js";
 import { DEFAULT_TABLE_ID, isTableId } from "./game/tables.js";
 
 const STORAGE_KEY = "marble-drop-account-v2";
-const STATE_VERSION = 4;
+const STATE_VERSION = 5;
 const STARTING_MARBLES = 300;
-const RELIEF_MARBLES = 30;
+const MIN_RUN_STAKE = 300;
+const RUN_STAKES = [300, 500, 1000];
 const COINS_PER_TICKET = 5;
 const MARBLES_PER_COIN = 5;
+const BASE_TICKET_CAP = 3;
 
 const clampInt = (value, min = 0, max = 9_999_999) =>
   Math.min(max, Math.max(min, Math.round(Number(value) || 0)));
@@ -29,6 +31,9 @@ function createDefaultAccount() {
     coins: 0,
     tickets: 0,
     bet: 20,
+    // An arcade run is a self-contained marble bank carved out of the personal
+    // wallet. It survives page reloads so the menu can offer "continue".
+    run: null,
     settings: {
       volume: 0.65,
       muted: false,
@@ -70,6 +75,24 @@ function normalizeTables(raw) {
   };
 }
 
+function normalizeRun(raw) {
+  if (!raw || raw.active !== true) return null;
+  const start = clampInt(raw.start, 0, 9_999_999);
+  if (start <= 0) return null;
+  const marbles = clampInt(raw.marbles, 0, 9_999_999);
+  const peak = Math.max(start, marbles, clampInt(raw.peak, 0, 9_999_999));
+  const startedAt = Number(raw.startedAt);
+  return {
+    active: true,
+    start,
+    marbles,
+    peak,
+    tickets: clampInt(raw.tickets, 0, 9_999_999),
+    rounds: clampInt(raw.rounds, 0, 9_999_999),
+    startedAt: Number.isFinite(startedAt) ? startedAt : Date.now(),
+  };
+}
+
 function normalize(raw) {
   const base = createDefaultAccount();
   if (!raw || typeof raw !== "object") return base;
@@ -79,6 +102,7 @@ function normalize(raw) {
     coins: clampInt(raw.coins, 0, 9_999_999),
     tickets: clampInt(raw.tickets, 0, 9_999_999),
     bet: clampInt(raw.bet ?? base.bet, 5, 99),
+    run: normalizeRun(raw.run),
     settings: {
       volume: clampFloat(raw.settings?.volume, 0, 1, base.settings.volume),
       muted: raw.settings?.muted === true,
@@ -171,8 +195,49 @@ class Account {
     return this.state.stats;
   }
 
+  /** The active arcade run, or null when the player is between runs. */
+  get run() {
+    return this.state.run;
+  }
+
+  get activeRun() {
+    return this.state.run?.active ? this.state.run : null;
+  }
+
+  get hasRun() {
+    return Boolean(this.state.run?.active);
+  }
+
+  /** Marbles available to the current context: the run bank or the wallet. */
+  get playMarbles() {
+    return this.hasRun ? this.state.run.marbles : this.state.marbles;
+  }
+
+  /** Total ticket cap for one round, driven by how many tables are unlocked. */
+  get ticketCap() {
+    return BASE_TICKET_CAP + Math.max(0, this.state.tables.owned.length - 1);
+  }
+
+  /** Marbles reachable by converting every coin and ticket in the wallet. */
+  get potentialMarbles() {
+    return (
+      this.state.marbles +
+      this.state.coins * MARBLES_PER_COIN +
+      this.state.tickets * COINS_PER_TICKET * MARBLES_PER_COIN
+    );
+  }
+
   get canClaimRelief() {
-    return this.state.marbles < 5 && this.state.coins === 0 && this.state.tickets === 0;
+    return (
+      !this.hasRun &&
+      this.state.marbles < MIN_RUN_STAKE &&
+      this.potentialMarbles < MIN_RUN_STAKE
+    );
+  }
+
+  get reliefAmount() {
+    if (!this.canClaimRelief) return 0;
+    return Math.max(0, MIN_RUN_STAKE - this.state.marbles);
   }
 
   get canAffordMinimumBet() {
@@ -222,11 +287,101 @@ class Account {
     this.#changed();
   }
 
+  /**
+   * Award (or deduct) tickets during an arcade run, tracking the run's net
+   * ticket result for the settlement screen. Wheel rewards are allowed to
+   * bypass the round's normal ticket cap by calling this directly.
+   */
+  awardRunTickets(delta) {
+    const amount = clampInt(delta, -9_999_999, 9_999_999);
+    if (!amount) return 0;
+    const before = this.state.tickets;
+    this.state.tickets = clampInt(before + amount, 0, 9_999_999);
+    const actual = this.state.tickets - before;
+    if (this.hasRun) {
+      this.state.run.tickets = clampInt(this.state.run.tickets + actual, 0, 9_999_999);
+    }
+    if (actual !== 0) this.#changed();
+    return actual;
+  }
+
   setBet(value) {
     const next = clampInt(value, 5, 99);
     if (next === this.state.bet) return;
     this.state.bet = next;
     this.#changed();
+  }
+
+  // ── Arcade runs ─────────────────────────────────────────
+
+  /**
+   * Move `startMarbles` from the personal wallet into a fresh run bank.
+   * Stakes are fixed so the opening screen can present a small, readable set.
+   */
+  startRun(startMarbles) {
+    const start = clampInt(startMarbles, 0, 9_999_999);
+    if (!RUN_STAKES.includes(start)) return { ok: false, reason: "invalid" };
+    if (this.hasRun) return { ok: false, reason: "active" };
+    if (this.state.marbles < start) {
+      return { ok: false, reason: "marbles", missing: start - this.state.marbles };
+    }
+    this.state.marbles -= start;
+    this.state.run = {
+      active: true,
+      start,
+      marbles: start,
+      peak: start,
+      tickets: 0,
+      rounds: 0,
+      startedAt: Date.now(),
+    };
+    this.#changed();
+    return { ok: true, run: { ...this.state.run } };
+  }
+
+  setRunMarbles(value) {
+    if (!this.hasRun) return false;
+    const next = clampInt(value, 0, 9_999_999);
+    const run = this.state.run;
+    if (next === run.marbles) return false;
+    run.marbles = next;
+    if (next > run.peak) run.peak = next;
+    this.#changed();
+    return true;
+  }
+
+  addRunMarbles(amount) {
+    if (!this.hasRun) return false;
+    return this.setRunMarbles(this.state.run.marbles + Number(amount || 0));
+  }
+
+  recordRunTicketDelta(delta) {
+    return this.awardRunTickets(delta);
+  }
+
+  /**
+   * Close the active run: return its remaining marbles to the personal wallet
+   * and hand the UI a compact summary for the settlement screen.
+   */
+  endRun(reason = "cashout") {
+    if (!this.hasRun) return null;
+    const run = this.state.run;
+    const summary = {
+      active: false,
+      start: run.start,
+      marbles: run.marbles,
+      peak: run.peak,
+      tickets: run.tickets,
+      rounds: run.rounds,
+      startedAt: run.startedAt,
+      endedAt: Date.now(),
+      returned: run.marbles,
+      reason,
+    };
+    this.state.marbles = clampInt(this.state.marbles + run.marbles, 0, 9_999_999);
+    this.state.run = null;
+    this.#changed();
+    return summary;
   }
 
   ownsSkin(id) {
@@ -271,8 +426,8 @@ class Account {
   }
 
   /**
-   * Buy a table with tickets and equip it immediately. Tickets are the only
-   * cosmetic / machine unlock currency; coins are reserved for buying marbles.
+   * Buy a table with tickets and equip it immediately. Each additional table
+   * also raises the ticket cap of every table by one.
    */
   purchaseTable(id, price = 0) {
     if (!isTableId(id)) return { ok: false, reason: "invalid" };
@@ -307,15 +462,17 @@ class Account {
   }
 
   claimRelief() {
-    if (!this.canClaimRelief) return 0;
-    this.state.marbles += RELIEF_MARBLES;
+    const amount = this.reliefAmount;
+    if (amount <= 0) return 0;
+    this.state.marbles += amount;
     this.#changed();
-    return RELIEF_MARBLES;
+    return amount;
   }
 
   recordRound(won) {
     this.state.stats.rounds += 1;
     if (won) this.state.stats.wins += 1;
+    if (this.hasRun) this.state.run.rounds += 1;
     this.#changed();
   }
 
@@ -361,7 +518,9 @@ class Account {
 export const account = new Account();
 export const economy = {
   STARTING_MARBLES,
-  RELIEF_MARBLES,
+  MIN_RUN_STAKE,
+  RUN_STAKES,
   COINS_PER_TICKET,
   MARBLES_PER_COIN,
+  BASE_TICKET_CAP,
 };

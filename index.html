@@ -62,12 +62,12 @@
             <span><b>1 彩票</b><em>→</em><strong>5 游戏币</strong></span>
             <span><b>1 游戏币</b><em>→</em><strong>5 弹珠</strong></span>
           </div>
-          <p>中奖每满 30 颗返还获得 1 张彩票 · 弹珠不足可领 30 颗补助</p>
+          <p>单局彩票上限 3 张起 · 每解锁一台机台所有机台上限 +1</p>
         </div>
 
         <div class="menu-relief" id="menuRelief" hidden>
-          <span>弹珠耗尽，且没有游戏币和彩票。</span>
-          <button id="menuReliefBtn" type="button">领取 30 颗补助</button>
+          <span id="menuReliefText">弹珠不足以开始新游戏，可领取开局补助。</span>
+          <button id="menuReliefBtn" type="button">领取补助</button>
         </div>
 
         <nav class="menu-actions" aria-label="主菜单">
@@ -76,7 +76,7 @@
               <span class="menu-btn-icon" aria-hidden="true">▶</span>
               <span>
                 <strong>街机模式</strong>
-                <small>300 颗弹珠开局 · 物理落点定输赢</small>
+                <small id="arcadeSub">选择 300 / 500 / 1000 颗弹珠开局</small>
               </span>
             </span>
             <span class="menu-btn-arrow" aria-hidden="true">→</span>
@@ -202,7 +202,7 @@
           <div class="dock-idle" id="dockIdle">
             <div class="dock-head">
               <span>投入弹珠</span>
-              <span class="dock-note">5–99 颗 · 余额 <b id="dockBalance">300</b></span>
+              <span class="dock-note">5–99 颗 · 本局余额 <b id="dockBalance">300</b></span>
             </div>
             <div class="bet-row">
               <button class="step-btn" id="betMinus" type="button" aria-label="减少投入">−</button>
@@ -212,7 +212,7 @@
               </label>
               <button class="step-btn" id="betPlus" type="button" aria-label="增加投入">+</button>
               <button class="start-btn" id="startBtn" type="button">
-                <span id="startLabel">开始游戏</span>
+                <span id="startLabel">开始投珠</span>
                 <small>投入 <b id="startBetText">20</b> 颗</small>
               </button>
             </div>
@@ -222,7 +222,7 @@
               <button type="button" data-bet="20" class="is-active">20</button>
               <button type="button" data-bet="50">50</button>
               <button type="button" data-bet="99">99</button>
-              <button type="button" class="refill-btn" id="refillBtn" hidden>补助 30 珠</button>
+              <button type="button" class="cashout-btn" id="cashOutBtn">结束游戏</button>
               <span class="quick-spacer"></span>
               <span class="payout-note">中奖奖槽 <i class="mini-light"></i></span>
             </div>
@@ -268,6 +268,63 @@
             </div>
           </div>
         </section>
+      </div>
+    </section>
+
+    <!-- ── 街机结算 ─────────────────────────────────────────── -->
+    <section class="screen sub-screen settle-screen" id="settleScreen" hidden>
+      <div class="panel-shell settle-shell">
+        <header class="screen-head">
+          <div class="screen-title">
+            <span class="screen-kicker">ARCADE RESULT</span>
+            <h1>街机结算</h1>
+          </div>
+          <span class="screen-mark" aria-hidden="true">★</span>
+        </header>
+
+        <div class="settle-hero">
+          <span class="settle-reason" id="settleReason">弹珠用尽 · 本局结束</span>
+          <div class="settle-score">
+            <span>最高持有弹珠</span>
+            <strong id="settlePeak">0</strong>
+            <small>HIGHEST STACK</small>
+          </div>
+          <div class="settle-grid">
+            <div class="settle-stat">
+              <span>获得彩票</span>
+              <b id="settleTicketsEarned">0</b>
+              <small>张</small>
+            </div>
+            <div class="settle-stat">
+              <span>开局弹珠</span>
+              <b id="settleStart">300</b>
+              <small>颗</small>
+            </div>
+            <div class="settle-stat">
+              <span>返还个人</span>
+              <b id="settleReturned">0</b>
+              <small>颗</small>
+            </div>
+            <div class="settle-stat">
+              <span>游玩局数</span>
+              <b id="settleRounds">0</b>
+              <small>局</small>
+            </div>
+          </div>
+        </div>
+
+        <div class="wallet-row settle-wallet" aria-label="结算后账户余额">
+          <span class="wallet-chip"><i>个人弹珠</i><b id="settleMarbles">0</b></span>
+          <span class="wallet-chip"><i>游戏币</i><b id="settleCoins">0</b></span>
+          <span class="wallet-chip"><i>彩票</i><b id="settleTickets">0</b></span>
+        </div>
+
+        <p class="settle-note" id="settleNote">彩票已计入账户，剩余弹珠已返还个人余额。</p>
+
+        <div class="settle-actions">
+          <button class="primary-btn settle-again" id="settleAgainBtn" type="button">再来一局</button>
+          <button class="ghost-btn settle-home" id="settleHomeBtn" type="button">返回主界面</button>
+        </div>
       </div>
     </section>
 
@@ -320,8 +377,8 @@
         </div>
 
         <div class="shop-relief" id="shopRelief" hidden>
-          <span>弹珠、游戏币和彩票都空了。</span>
-          <button id="shopReliefBtn" type="button">领取 30 颗补助</button>
+          <span id="shopReliefText">个人弹珠不足以开始新游戏，可领取开局补助。</span>
+          <button id="shopReliefBtn" type="button">领取补助</button>
         </div>
 
         <div class="exchange-card table-counter">
@@ -329,7 +386,7 @@
             <span class="exchange-icon table-icon" aria-hidden="true">▦</span>
             <div>
               <h2>弹珠台机台</h2>
-              <p>用彩票购买新的机台。游戏币只用于兑换弹珠；不同机台拥有独立的外观、机柜造型与专属机关。基础机台「橡木经典」使用更宽松的低倍率表，单次彩票上限 3 张；其他机台使用完整倍率表，「狂赌深渊」的中央轮盘还会改写倍率与彩票数。</p>
+              <p>用彩票购买新的机台。游戏币只用于兑换弹珠；不同机台拥有独立的外观、机柜造型与专属机关。基础机台「橡木经典」使用更宽松的低倍率表；「狂赌深渊」的中央轮盘还会改写倍率与彩票数。</p>
             </div>
           </div>
 
@@ -339,9 +396,9 @@
             <span class="skin-summary-hint">购买后立即装备，下一局生效</span>
           </div>
 
-          <div class="table-grid" id="tableGrid"></div>
+          <p class="skin-note" id="tableTicketCapNote">当前单局彩票上限 3 张。每多解锁一台机台，所有机台的单局彩票上限 +1；狂赌深渊轮盘额外加减的彩票不受该上限限制。</p>
 
-          <p class="skin-note">投注范围与 12 个奖槽全机台通用；基础机台的低倍率表与彩票上限是为了让新玩家先攒弹珠，再换机台追高倍率。</p>
+          <div class="table-grid" id="tableGrid"></div>
         </div>
 
         <div class="exchange-card skin-counter">
@@ -364,7 +421,7 @@
           <p class="skin-note">皮肤会同步影响母球外观、拖尾、碰撞粒子、发射音效与碰撞音效。</p>
         </div>
 
-        <p class="shop-note">兑换即时到账。没有游戏币和彩票、且弹珠不足 5 颗时，可领取 30 颗补助。</p>
+        <p class="shop-note">兑换即时到账。个人弹珠不足以开始新游戏时，可领取补足 300 颗的开局补助；彩票与游戏币仍会保留。</p>
       </div>
     </section>
 
@@ -425,6 +482,53 @@
       </div>
     </section>
 
+    <!-- ── 街机入口 / 新游戏设置 ─────────────────────────────── -->
+    <dialog class="help-dialog arcade-dialog" id="arcadeDialog">
+      <div class="dialog-head">
+        <div>
+          <span class="dialog-kicker" id="arcadeDialogKicker">ARCADE MODE</span>
+          <h2 id="arcadeDialogTitle">街机模式</h2>
+        </div>
+        <button class="dialog-close" id="arcadeDialogClose" type="button" aria-label="关闭街机模式">×</button>
+      </div>
+
+      <div class="arcade-view" id="arcadeChoiceView">
+        <p class="arcade-lead">继续上一次的街机进程，或从 300 / 500 / 1000 颗弹珠开始一场新游戏。</p>
+        <button class="arcade-choice" id="continueRunBtn" type="button">
+          <span class="arcade-choice-icon" aria-hidden="true">▶</span>
+          <span class="arcade-choice-copy">
+            <strong>继续游戏</strong>
+            <small id="continueRunMeta">暂无进行中的游戏</small>
+          </span>
+          <span class="arcade-choice-arrow" aria-hidden="true">→</span>
+        </button>
+        <button class="arcade-choice" id="newRunBtn" type="button">
+          <span class="arcade-choice-icon" aria-hidden="true">＋</span>
+          <span class="arcade-choice-copy">
+            <strong>新游戏</strong>
+            <small>选择初始弹珠数量，开始后不能追加</small>
+          </span>
+          <span class="arcade-choice-arrow" aria-hidden="true">→</span>
+        </button>
+        <p class="arcade-hint">游戏中可以随时提前结束，剩余弹珠会返还到个人账户。</p>
+      </div>
+
+      <div class="arcade-view" id="arcadeSetupView" hidden>
+        <button class="arcade-back" id="arcadeSetupBack" type="button">← 返回</button>
+        <div class="arcade-wallet">
+          <span>个人弹珠</span>
+          <b id="arcadeWalletMarbles">300</b>
+        </div>
+        <p class="arcade-setup-lead">选择开局弹珠。游戏开始后不能追加，所有弹珠用完或提前结束时结算。</p>
+        <div class="stake-grid" id="stakeGrid"></div>
+        <p class="arcade-setup-note" id="arcadeSetupNote"></p>
+        <div class="arcade-setup-actions">
+          <button class="primary-btn" id="arcadeStartBtn" type="button">开始游戏</button>
+          <button class="ghost-btn" id="arcadeReliefBtn" type="button" hidden>领取补助</button>
+        </div>
+      </div>
+    </dialog>
+
     <!-- ── 玩法说明 ─────────────────────────────────────────── -->
     <dialog class="help-dialog" id="helpDialog">
       <div class="dialog-head">
@@ -435,13 +539,14 @@
         <button class="dialog-close" id="helpClose" type="button" aria-label="关闭玩法说明">×</button>
       </div>
       <ol class="rules-list">
-        <li><b>投入 5–99 颗弹珠</b><span>按下开始后扣除本局投入，随机亮起本局倍率与中奖槽位。</span></li>
-        <li><b>释放母球</b><span>限位器自动打开，母球落入右下发射舱。</span></li>
-        <li><b>线性调节拉力，松手发射</b><span>按住右下角弹簧把手向下拖动，底部力度条会实时显示弱力 / 中力 / 强力 / 满力。松手发射：最低力度刚好越过发射通道顶部，力度越大，母球在圆顶反弹后会被送得越远。</span></li>
-        <li><b>落入奖槽即可中奖</b><span>返还「投入 × 倍率」颗弹珠。每满 30 颗返还弹珠，额外获得 1 张彩票；基础机台单次最多 3 张彩票。中奖后弹珠会吐进托盘，等待全部落完再显示结算；可在选项中关闭中奖动画。</span></li>
-        <li><b>机台与障碍物</b><span>在商店用彩票购买并装备新机台。不同机台有独立外观与障碍物：霓虹分流钉、循环飞行的汽车、主动 / 被动旋转转子、碰撞弹射桩和成对传送门。障碍物会真实参与碰撞；投注范围与 12 个奖槽通用，但基础机台有独立的低倍率表和彩票上限。</span></li>
-        <li><b>狂赌深渊 · 中央轮盘</b><span>母球触碰中央十二格轮盘时会被暂时吞入。指针停在「倍率 +1 / -1」「追加一球」或「深渊吞噬」：每次开盘彩票 +1 或 -1，涨跌直接改写本局倍率，追加球会独立落入奖槽、结算后销毁，吞噬则立即结束本球。结果揭晓后，母球从轮心以随机角度射出；轮盘并非必中区域，落点有可能完全避开它。</span></li>
-        <li><b>街机经济</b><span>1 张彩票可在商店兑换 5 游戏币，1 游戏币可购买 5 颗弹珠。当弹珠不足 5 颗、且没有游戏币和彩票时，可免费领取 30 颗补助。</span></li>
+        <li><b>进入街机模式</b><span>选择「新游戏」或「继续」。新游戏可从 300 / 500 / 1000 颗弹珠中选择开局数量，这些弹珠会从个人余额转入本局；开始后不能追加。</span></li>
+        <li><b>投入 5–99 颗弹珠</b><span>每球从本局弹珠中扣除投入，随机亮起本局倍率与中奖槽位。弹珠不足 5 颗时本局结束并进入结算。</span></li>
+        <li><b>释放母球</b><span>限位器自动打开，母球落入右下发射舱。按住右下角弹簧把手向下拖动，松手发射；最低力度刚好越过发射通道顶部，力度越大，母球在圆顶反弹后会被送得越远。</span></li>
+        <li><b>落入奖槽即可中奖</b><span>返还「投入 × 倍率」颗弹珠。每满 30 颗返还弹珠获得 1 张彩票；单局普通彩票上限为 3 张，每多解锁一台机台，所有机台上限 +1。<span id="helpTicketCap">当前上限 3 张</span>。中奖后弹珠会吐进托盘；可在选项中关闭中奖动画。</span></li>
+        <li><b>机台与障碍物</b><span>在商店用彩票购买并装备新机台。不同机台有独立外观与障碍物：霓虹分流钉、循环飞行的汽车、主动 / 被动旋转转子、碰撞弹射桩和成对传送门。障碍物会真实参与碰撞；投注范围与 12 个奖槽通用，基础机台使用独立的低倍率表。</span></li>
+        <li><b>狂赌深渊 · 中央轮盘</b><span>母球触碰中央十二格轮盘时会被暂时吞入。指针停在「倍率 +1 / -1」「追加一球」或「深渊吞噬」：每次开盘彩票 +1 或 -1，这部分彩票不受单局上限限制；涨跌直接改写本局倍率，追加球会独立落入奖槽、结算后销毁，吞噬则立即结束本球。结果揭晓后，母球从轮心以随机角度射出；轮盘并非必中区域，落点有可能完全避开它。</span></li>
+        <li><b>结算与提前结束</b><span>所有弹珠用完（不足 5 颗）后自动进入结算，展示最高持有弹珠和本次获得的彩票数，剩余弹珠返还个人账户。游戏中也可以点「结束游戏」提前结算，剩余弹珠同样返还个人。</span></li>
+        <li><b>街机经济</b><span>1 张彩票可在商店兑换 5 游戏币，1 游戏币可购买 5 颗弹珠。个人弹珠不足以开始新游戏时，可免费领取补足 300 颗的开局补助；彩票与游戏币会保留。</span></li>
       </ol>
       <div class="odds-card">
         <div class="odds-title">倍率与奖槽</div>
@@ -452,10 +557,10 @@
           <span>×8</span><span>其他机台 1 槽</span>
           <span>×10</span><span>其他机台 1 槽</span>
         </div>
-        <p><b>橡木经典</b>只出现 ×2 / ×4 / ×6，其中 ×2 与 ×4 合计 80%，单次彩票上限 3 张；其他机台使用完整倍率表。倍率越高，中奖槽位越少。</p>
+        <p><b>橡木经典</b>只出现 ×2 / ×4 / ×6，其中 ×2 与 ×4 合计 80%；其他机台使用完整倍率表。倍率越高，中奖槽位越少。单局普通彩票上限从 3 张起步，每多解锁一台机台全机台 +1。</p>
       </div>
       <p class="key-hint">商店的母球皮肤会改变外观、拖尾、碰撞粒子与发射 / 碰撞音效，<b>不影响物理属性与落点</b>。狂赌深渊的轮盘结果会真实改变倍率、彩票和追加球，是唯一会改写开奖参数的机台。</p>
-      <p class="key-hint">桌面端也可按住 <b>空格</b> 蓄力，松开空格发射。机台右上角的房子按钮可返回主界面。</p>
+      <p class="key-hint">桌面端也可按住 <b>空格</b> 蓄力，松开空格发射。机台右上角的房子按钮可暂停并返回主界面，进度会保留。</p>
       <div class="dialog-actions">
         <button class="ghost-btn" id="resetBtn" type="button">重置本地存档</button>
         <button class="primary-btn" id="helpDone" type="button">知道了</button>

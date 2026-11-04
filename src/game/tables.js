@@ -576,18 +576,16 @@ const DEFINITIONS = [
     price: 0,
     currency: "tickets",
     art: "classic",
-    features: ["新手友好", "对称 10/9 钉阵", "单次彩票≤3 张"],
-    // The entry table is deliberately generous: low multipliers dominate, the
-    // top prize stops at ×6 and a single payout can never mint more than three
-    // tickets. It is the place to build a marble bank and learn the plunger,
-    // not a place to farm the long-term currency.
+    features: ["新手友好", "对称 10/9 钉阵", "低倍率新手桌"],
+    // The entry table is deliberately generous: low multipliers dominate and
+    // the top prize stops at ×6. The shared per-round ticket cap starts at 3
+    // and grows with every additional table unlocked.
     rules: {
       multipliers: [
         { value: 2, weight: 46, slots: 5 },
         { value: 4, weight: 34, slots: 3 },
         { value: 6, weight: 20, slots: 2 },
       ],
-      ticketCap: 3,
     },
     palette: {
       primary: "#e7b566",

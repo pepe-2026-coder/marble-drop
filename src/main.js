@@ -19,17 +19,23 @@ const screens = {
   shop: $("shopScreen"),
   options: $("optionsScreen"),
   exit: $("exitScreen"),
+  settle: $("settleScreen"),
 };
 
 const menuMarbles = $("menuMarbles");
 const menuCoins = $("menuCoins");
 const menuTickets = $("menuTickets");
 const menuRelief = $("menuRelief");
+const menuReliefText = $("menuReliefText");
+const menuReliefBtn = $("menuReliefBtn");
+const arcadeSub = $("arcadeSub");
 
 const shopMarbles = $("shopMarbles");
 const shopCoins = $("shopCoins");
 const shopTickets = $("shopTickets");
 const shopRelief = $("shopRelief");
+const shopReliefText = $("shopReliefText");
+const shopReliefBtn = $("shopReliefBtn");
 const ticketExchangeOne = $("ticketExchangeOne");
 const ticketExchangeAll = $("ticketExchangeAll");
 const coinBuySmall = $("coinBuySmall");
@@ -38,6 +44,35 @@ const skinGrid = $("skinGrid");
 const skinEquippedName = $("skinEquippedName");
 const tableGrid = $("tableGrid");
 const tableEquippedName = $("tableEquippedName");
+const tableTicketCapNote = $("tableTicketCapNote");
+const helpTicketCap = $("helpTicketCap");
+
+const arcadeDialog = $("arcadeDialog");
+const arcadeDialogKicker = $("arcadeDialogKicker");
+const arcadeDialogTitle = $("arcadeDialogTitle");
+const arcadeDialogClose = $("arcadeDialogClose");
+const arcadeChoiceView = $("arcadeChoiceView");
+const arcadeSetupView = $("arcadeSetupView");
+const continueRunBtn = $("continueRunBtn");
+const continueRunMeta = $("continueRunMeta");
+const newRunBtn = $("newRunBtn");
+const arcadeSetupBack = $("arcadeSetupBack");
+const arcadeWalletMarbles = $("arcadeWalletMarbles");
+const stakeGrid = $("stakeGrid");
+const arcadeStartBtn = $("arcadeStartBtn");
+const arcadeReliefBtn = $("arcadeReliefBtn");
+const arcadeSetupNote = $("arcadeSetupNote");
+
+const settleReason = $("settleReason");
+const settlePeak = $("settlePeak");
+const settleTicketsEarned = $("settleTicketsEarned");
+const settleStart = $("settleStart");
+const settleReturned = $("settleReturned");
+const settleRounds = $("settleRounds");
+const settleMarbles = $("settleMarbles");
+const settleCoins = $("settleCoins");
+const settleTickets = $("settleTickets");
+const settleNote = $("settleNote");
 
 const volumeRange = $("volumeRange");
 const volumeValue = $("volumeValue");
@@ -48,9 +83,16 @@ const helpDialog = $("helpDialog");
 
 let currentScreen = "menu";
 let shopReturnScreen = "menu";
+let selectedStake = economy.MIN_RUN_STAKE;
 
-const isBroke = (state) =>
-  state.marbles < 5 && state.coins === 0 && state.tickets === 0;
+const isBroke = (state) => {
+  if (state.run?.active) return false;
+  const potential =
+    state.marbles +
+    state.coins * economy.MARBLES_PER_COIN +
+    state.tickets * economy.COINS_PER_TICKET * economy.MARBLES_PER_COIN;
+  return state.marbles < economy.MIN_RUN_STAKE && potential < economy.MIN_RUN_STAKE;
+};
 
 function format(value) {
   return Number(value || 0).toLocaleString("zh-CN");
@@ -58,6 +100,10 @@ function format(value) {
 
 function showScreen(name) {
   if (!screens[name]) return;
+  if (name === "game" && !account.hasRun) {
+    openArcadeDialog();
+    return;
+  }
   currentScreen = name;
   Object.entries(screens).forEach(([key, screen]) => {
     screen.hidden = key !== name;
@@ -97,10 +143,28 @@ function syncAccount(state) {
   shopMarbles.textContent = format(state.marbles);
   shopCoins.textContent = format(state.coins);
   shopTickets.textContent = format(state.tickets);
+  settleMarbles.textContent = format(state.marbles);
+  settleCoins.textContent = format(state.coins);
+  settleTickets.textContent = format(state.tickets);
 
   const broke = isBroke(state);
   menuRelief.hidden = !broke;
   shopRelief.hidden = !broke;
+  if (broke) {
+    const relief = account.reliefAmount;
+    menuReliefText.textContent = "弹珠不足以开始新游戏，可领取开局补助。";
+    menuReliefBtn.textContent = `领取 ${format(relief)} 颗补助`;
+    shopReliefText.textContent = "个人弹珠不足以开始新游戏，可领取开局补助。";
+    shopReliefBtn.textContent = `领取 ${format(relief)} 颗补助`;
+  }
+
+  arcadeSub.textContent = state.run?.active
+    ? `进行中 · 本局 ${format(state.run.marbles)} 颗 · 最高 ${format(state.run.peak)} 颗`
+    : "选择 300 / 500 / 1000 颗弹珠开局";
+
+  const cap = account.ticketCap;
+  tableTicketCapNote.textContent = `当前单局彩票上限 ${cap} 张。每多解锁一台机台，所有机台的单局彩票上限 +1；狂赌深渊轮盘额外加减的彩票不受该上限限制。`;
+  helpTicketCap.textContent = `当前上限 ${cap} 张`;
 
   ticketExchangeOne.disabled = state.tickets < 1;
   ticketExchangeAll.disabled = state.tickets < 1;
@@ -123,12 +187,231 @@ function syncAccount(state) {
 
 account.subscribe(syncAccount);
 
+/* ── Arcade entry / new run ──────────────────────────────── */
+
+function showArcadeChoice() {
+  arcadeDialogKicker.textContent = "ARCADE MODE";
+  arcadeDialogTitle.textContent = "街机模式";
+  arcadeChoiceView.hidden = false;
+  arcadeSetupView.hidden = true;
+}
+
+function renderArcadeChoice() {
+  const run = account.activeRun;
+  continueRunBtn.disabled = !run;
+  continueRunBtn.classList.toggle("is-disabled", !run);
+  continueRunMeta.textContent = run
+    ? `本局 ${format(run.marbles)} 颗 · 最高 ${format(run.peak)} 颗 · 已获得 ${format(run.tickets)} 张彩票`
+    : "暂无进行中的游戏";
+  showArcadeChoice();
+}
+
+function renderStakeOptions() {
+  const wallet = account.marbles;
+  const stakes = economy.RUN_STAKES;
+  const affordable = stakes.filter((stake) => stake <= wallet);
+  if (!affordable.includes(selectedStake)) {
+    selectedStake = affordable[0] ?? stakes[0];
+  }
+
+  arcadeWalletMarbles.textContent = format(wallet);
+  arcadeDialogKicker.textContent = "NEW GAME";
+  arcadeDialogTitle.textContent = "选择开局弹珠";
+  stakeGrid.innerHTML = stakes
+    .map((stake) => {
+      const canAfford = wallet >= stake;
+      const selected = stake === selectedStake;
+      const label =
+        stake === 300 ? "标准开局" : stake === 500 ? "进阶开局" : "豪赌开局";
+      const note = canAfford ? label : `还差 ${format(stake - wallet)} 颗`;
+      return `
+        <button class="stake-card ${selected ? "is-selected" : ""}" type="button" data-stake="${stake}" ${canAfford ? "" : "disabled"} aria-pressed="${selected}">
+          <b>${format(stake)}</b>
+          <small>颗</small>
+          <em>${note}</em>
+        </button>
+      `;
+    })
+    .join("");
+
+  const canStart = affordable.length > 0;
+  arcadeStartBtn.disabled = !canStart;
+  const relief = account.reliefAmount;
+  if (relief > 0) {
+    arcadeReliefBtn.hidden = false;
+    arcadeReliefBtn.dataset.action = "relief";
+    arcadeReliefBtn.textContent = `领取 ${format(relief)} 颗补助`;
+  } else if (!canStart) {
+    arcadeReliefBtn.hidden = false;
+    arcadeReliefBtn.dataset.action = "shop";
+    arcadeReliefBtn.textContent = "去商店兑换";
+  } else {
+    arcadeReliefBtn.hidden = true;
+    delete arcadeReliefBtn.dataset.action;
+  }
+
+  if (canStart) {
+    arcadeSetupNote.textContent = `开局后这 ${format(selectedStake)} 颗弹珠会从个人余额转入本局；结束或提前结算时，剩余弹珠返还个人。游戏开始后不能追加。`;
+  } else if (relief > 0) {
+    arcadeSetupNote.textContent = "个人弹珠不足 300 颗。领取补助补足后即可开始标准开局。";
+  } else {
+    arcadeSetupNote.textContent = "个人弹珠不足 300 颗。可前往商店用游戏币或彩票兑换弹珠。";
+  }
+}
+
+function showArcadeSetup() {
+  arcadeChoiceView.hidden = true;
+  arcadeSetupView.hidden = false;
+  renderStakeOptions();
+}
+
+function openArcadeDialog(options = {}) {
+  audio.init();
+  audio.click();
+  renderArcadeChoice();
+  if (options.setup) showArcadeSetup();
+  if (typeof arcadeDialog.showModal === "function") arcadeDialog.showModal();
+  else arcadeDialog.setAttribute("open", "");
+}
+
+function closeArcadeDialog() {
+  if (typeof arcadeDialog.close === "function") arcadeDialog.close();
+  else arcadeDialog.removeAttribute("open");
+}
+
+function startNewArcadeRun() {
+  const result = account.startRun(selectedStake);
+  if (!result.ok) {
+    if (result.reason === "marbles") {
+      toast(`个人弹珠还差 ${format(result.missing)} 颗`);
+    } else {
+      toast("暂时无法开始新的街机游戏");
+    }
+    renderStakeOptions();
+    return;
+  }
+  closeArcadeDialog();
+  window.dispatchEvent(new CustomEvent("marble:run-started"));
+  if (account.hasRun) showScreen("game");
+  toast(`新游戏开始 · ${format(result.run.start)} 颗弹珠`);
+}
+
+function continueArcadeRun() {
+  if (!account.hasRun) return;
+  closeArcadeDialog();
+  window.dispatchEvent(new CustomEvent("marble:run-continued"));
+  // A resumed run with fewer than 5 marbles settles immediately from the
+  // run-continued handler; in that case the settlement screen is already up.
+  if (account.hasRun) showScreen("game");
+}
+
+function requestNewArcadeRun() {
+  if (account.hasRun) {
+    const confirmed = window.confirm(
+      "当前还有一场街机游戏没有结算。开始新游戏会先结束当前游戏，剩余弹珠返还个人账户。继续吗？",
+    );
+    if (!confirmed) return;
+    const summary = account.endRun("replaced");
+    if (summary) toast(`已结算当前游戏 · 返还 ${format(summary.returned)} 颗弹珠`);
+  }
+  showArcadeSetup();
+}
+
+function renderSettlement(summary) {
+  if (!summary) return;
+  const cashout = summary.reason === "cashout";
+  settleReason.textContent = cashout ? "提前结束 · 弹珠已返还" : "弹珠用尽 · 本局结束";
+  settlePeak.textContent = format(summary.peak);
+  settleTicketsEarned.textContent = format(summary.tickets);
+  settleStart.textContent = format(summary.start);
+  settleReturned.textContent = format(summary.returned);
+  settleRounds.textContent = format(summary.rounds);
+  settleNote.textContent = cashout
+    ? `提前结束本局，${format(summary.returned)} 颗剩余弹珠已返还个人余额；本次获得的彩票已经计入账户。`
+    : `本局弹珠已经用完，${format(summary.returned)} 颗余额已返还个人账户；本次获得的彩票已经计入账户。`;
+  const state = account.snapshot();
+  settleMarbles.textContent = format(state.marbles);
+  settleCoins.textContent = format(state.coins);
+  settleTickets.textContent = format(state.tickets);
+  showScreen("settle");
+}
+
+window.addEventListener("marble:run-ended", (event) => {
+  renderSettlement(event.detail);
+});
+
 /* ── Menu actions ────────────────────────────────────────── */
 
 $("arcadeBtn").addEventListener("click", () => {
-  audio.init();
+  openArcadeDialog();
+});
+
+$("arcadeDialogClose").addEventListener("click", () => {
   audio.click();
-  showScreen("game");
+  closeArcadeDialog();
+});
+
+arcadeDialog.addEventListener("click", (event) => {
+  if (event.target === arcadeDialog) closeArcadeDialog();
+});
+
+arcadeDialog.addEventListener("cancel", () => {
+  showArcadeChoice();
+});
+
+continueRunBtn.addEventListener("click", () => {
+  audio.click();
+  continueArcadeRun();
+});
+
+newRunBtn.addEventListener("click", () => {
+  audio.click();
+  requestNewArcadeRun();
+});
+
+arcadeSetupBack.addEventListener("click", () => {
+  audio.click();
+  showArcadeChoice();
+});
+
+stakeGrid.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-stake]");
+  if (!button || button.disabled) return;
+  selectedStake = Number(button.dataset.stake);
+  audio.click();
+  renderStakeOptions();
+});
+
+arcadeStartBtn.addEventListener("click", () => {
+  audio.click();
+  startNewArcadeRun();
+});
+
+arcadeReliefBtn.addEventListener("click", () => {
+  audio.init();
+  if (arcadeReliefBtn.dataset.action === "shop") {
+    closeArcadeDialog();
+    showScreen("menu");
+    openShop("menu");
+    return;
+  }
+  const amount = account.claimRelief();
+  if (amount > 0) {
+    audio.ticket();
+    toast(`已领取 ${format(amount)} 颗开局补助`);
+    renderStakeOptions();
+  }
+});
+
+$("settleAgainBtn").addEventListener("click", () => {
+  audio.click();
+  showScreen("menu");
+  openArcadeDialog({ setup: true });
+});
+
+$("settleHomeBtn").addEventListener("click", () => {
+  audio.click();
+  showScreen("menu");
 });
 
 $("shopBtn").addEventListener("click", () => {
@@ -496,7 +779,7 @@ $("optionsHelpBtn").addEventListener("click", openHelp);
 
 $("optionsResetBtn").addEventListener("click", () => {
   const confirmed = window.confirm(
-    "重置本地存档？弹珠将回到 300 颗，游戏币、彩票、母球皮肤、机台、设置和记录都会清空。",
+    "重置本地存档？弹珠将回到 300 颗，进行中的街机游戏、游戏币、彩票、母球皮肤、机台、设置和记录都会清空。",
   );
   if (!confirmed) return;
   account.reset();
