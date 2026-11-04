@@ -8,6 +8,7 @@ import { account, economy } from "./account.js";
 import { audio, vibrate } from "./audio.js";
 import { SKIN_LIST, getSkin, skinCssVars } from "./game/skins.js";
 import { TABLE_LIST, getTable, tableCssVars } from "./game/tables.js";
+import { LEVELS } from "./game/levels.js";
 import { drawTablePreview } from "./game/tablePreview.js";
 import { toast } from "./ui/toast.js";
 
@@ -20,6 +21,7 @@ const screens = {
   options: $("optionsScreen"),
   exit: $("exitScreen"),
   settle: $("settleScreen"),
+  challenge: $("challengeScreen"),
 };
 
 const menuMarbles = $("menuMarbles");
@@ -29,6 +31,9 @@ const menuRelief = $("menuRelief");
 const menuReliefText = $("menuReliefText");
 const menuReliefBtn = $("menuReliefBtn");
 const arcadeSub = $("arcadeSub");
+const challengeSub = $("challengeSub");
+const levelList = $("levelList");
+const dealerStripText = $("dealerStripText");
 
 const shopMarbles = $("shopMarbles");
 const shopCoins = $("shopCoins");
@@ -100,7 +105,7 @@ function format(value) {
 
 function showScreen(name) {
   if (!screens[name]) return;
-  if (name === "game" && !account.hasRun) {
+  if (name === "game" && !account.hasRun && document.body.dataset.mode !== "challenge") {
     openArcadeDialog();
     return;
   }
@@ -115,6 +120,10 @@ function showScreen(name) {
     const state = account.snapshot();
     renderTableShop(state);
     renderSkinShop(state);
+  }
+
+  if (name === "challenge") {
+    renderChallengeScreen();
   }
 
   if (name === "game") {
@@ -340,6 +349,88 @@ window.addEventListener("marble:run-ended", (event) => {
   renderSettlement(event.detail);
 });
 
+/* ── Challenge entry ─────────────────────────────────────── */
+
+const TEMPLATE_LABEL = {
+  precision: "精准落点",
+  destroy: "破坏目标",
+  boss: "庄家作弊",
+};
+
+function renderChallengeScreen() {
+  const current = account.nextChallengeLevel;
+  const cleared = LEVELS.filter((level) => account.challengeCleared(level.id)).length;
+  if (levelList) {
+    levelList.innerHTML = LEVELS.map((level, index) => {
+      const stars = account.challengeStars(level.id);
+      const unlocked = account.isChallengeUnlocked(level.id);
+      const classes = ["level-item-btn"];
+      if (stars > 0) classes.push("is-cleared");
+      if (level.id === current) classes.push("is-current");
+      const starHtml = [0, 1, 2]
+        .map((i) => `<i class="${i < stars ? "is-lit" : ""}">★</i>`)
+        .join("");
+      const detail = unlocked
+        ? `${TEMPLATE_LABEL[level.template] || "关卡"} · ${level.balls} 球 · ${level.tools.length} 件可选道具`
+        : "未解锁 · 先过上一关";
+      return `<li><button class="${classes.join(" ")}" type="button" data-level="${level.id}" ${
+        unlocked ? "" : "disabled"
+      }>
+        <span class="level-item-no">${String(index + 1).padStart(2, "0")}</span>
+        <span class="level-item-copy"><b>${level.name}</b><small>${detail}</small></span>
+        <span class="level-item-stars">${starHtml}</span>
+      </button></li>`;
+    }).join("");
+  }
+  if (dealerStripText) {
+    if (cleared === 0) {
+      dealerStripText.textContent = "本庄今晚兴致不错。挑一关，别让本庄久等。";
+    } else if (cleared < LEVELS.length) {
+      dealerStripText.textContent = `客人已经过了 ${cleared} 关。本庄开始觉得……有点意思了。`;
+    } else {
+      dealerStripText.textContent = "六关全过。本庄说话算话——桌子归您。";
+    }
+  }
+  if (challengeSub) {
+    challengeSub.textContent =
+      cleared > 0
+        ? `庄家 · 七 坐庄 · 已过 ${cleared}/${LEVELS.length} 关`
+        : "庄家 · 七 坐庄 · 6 关";
+  }
+}
+
+function enterChallenge(levelId) {
+  audio.init();
+  audio.click();
+  document.body.dataset.mode = "challenge";
+  showScreen("game");
+  window.__MARBLE_DROP__.challenge.start(levelId);
+}
+
+$("challengeBtn").addEventListener("click", () => {
+  audio.click();
+  showScreen("challenge");
+});
+
+$("challengeBack").addEventListener("click", () => {
+  audio.click();
+  document.body.dataset.mode = "";
+  showScreen("menu");
+});
+
+if (levelList) {
+  levelList.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-level]");
+    if (!button || button.disabled) return;
+    enterChallenge(button.dataset.level);
+  });
+}
+
+window.addEventListener("marble:challenge", () => {
+  document.body.dataset.mode = "";
+  showScreen("challenge");
+});
+
 /* ── Menu actions ────────────────────────────────────────── */
 
 $("arcadeBtn").addEventListener("click", () => {
@@ -455,7 +546,7 @@ $("menuReliefBtn").addEventListener("click", () => {
   }
 });
 
-$("challengeBtn").title = "积分与机关系统正在打磨，暂未开放";
+$("challengeBtn").title = "庄家坐庄，六关连闯";
 
 /* ── Shop ────────────────────────────────────────────────── */
 

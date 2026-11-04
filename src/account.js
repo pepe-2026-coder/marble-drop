@@ -5,9 +5,10 @@
 
 import { DEFAULT_SKIN_ID, isSkinId } from "./game/skins.js";
 import { DEFAULT_TABLE_ID, isTableId } from "./game/tables.js";
+import { LEVELS } from "./game/levels.js";
 
 const STORAGE_KEY = "marble-drop-account-v2";
-const STATE_VERSION = 5;
+const STATE_VERSION = 6;
 const STARTING_MARBLES = 300;
 const MIN_RUN_STAKE = 300;
 const RUN_STAKES = [300, 500, 1000];
@@ -52,6 +53,10 @@ function createDefaultAccount() {
       rounds: 0,
       wins: 0,
     },
+    challenge: {
+      stars: {},
+      lastLevel: LEVELS[0]?.id || "oak-01",
+    },
   };
 }
 
@@ -93,6 +98,19 @@ function normalizeRun(raw) {
   };
 }
 
+/** 闯关进度：只存星星和上次打开的关卡，解锁状态由星星推导。 */
+function normalizeChallenge(raw) {
+  const stars = {};
+  for (const level of LEVELS) {
+    const value = Math.round(Number(raw?.stars?.[level.id]) || 0);
+    if (value > 0) stars[level.id] = Math.min(3, value);
+  }
+  const lastLevel = LEVELS.some((level) => level.id === raw?.lastLevel)
+    ? raw.lastLevel
+    : LEVELS[0].id;
+  return { stars, lastLevel };
+}
+
 function normalize(raw) {
   const base = createDefaultAccount();
   if (!raw || typeof raw !== "object") return base;
@@ -115,6 +133,7 @@ function normalize(raw) {
       rounds: clampInt(raw.stats?.rounds, 0, 99_999_999),
       wins: clampInt(raw.stats?.wins, 0, 99_999_999),
     },
+    challenge: normalizeChallenge(raw.challenge),
   };
 }
 
@@ -193,6 +212,55 @@ class Account {
 
   get stats() {
     return this.state.stats;
+  }
+
+  // ── Challenge progression ───────────────────────────────
+
+  get challenge() {
+    return this.state.challenge;
+  }
+
+  challengeStars(levelId) {
+    return this.state.challenge.stars[levelId] || 0;
+  }
+
+  challengeCleared(levelId) {
+    return this.challengeStars(levelId) > 0;
+  }
+
+  /** 第一关永远解锁；之后的关卡要求上一关至少拿到一颗星。 */
+  isChallengeUnlocked(levelId) {
+    const index = LEVELS.findIndex((level) => level.id === levelId);
+    if (index < 0) return false;
+    if (index === 0) return true;
+    return this.challengeCleared(LEVELS[index - 1].id);
+  }
+
+  /** 当前可以挑战的最远一关，用于「继续」按钮。 */
+  get nextChallengeLevel() {
+    const open = LEVELS.find((level) => this.isChallengeUnlocked(level.id) && !this.challengeCleared(level.id));
+    if (open) return open.id;
+    const remembered = this.state.challenge.lastLevel;
+    return LEVELS.some((level) => level.id === remembered) ? remembered : LEVELS[0].id;
+  }
+
+  /** 只记录更好的一遍：重打不会把三星刷成一星。 */
+  recordChallengeStars(levelId, stars) {
+    if (!LEVELS.some((level) => level.id === levelId)) return 0;
+    const next = Math.min(3, Math.max(0, Math.round(Number(stars) || 0)));
+    const before = this.state.challenge.stars[levelId] || 0;
+    if (next <= before) return before;
+    this.state.challenge.stars[levelId] = next;
+    this.#changed();
+    return next;
+  }
+
+  setChallengeLastLevel(levelId) {
+    if (!LEVELS.some((level) => level.id === levelId)) return false;
+    if (this.state.challenge.lastLevel === levelId) return false;
+    this.state.challenge.lastLevel = levelId;
+    this.#changed();
+    return true;
   }
 
   /** The active arcade run, or null when the player is between runs. */

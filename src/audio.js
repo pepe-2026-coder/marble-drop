@@ -244,6 +244,28 @@ class SoundEngine {
     );
   }
 
+  /* ── Challenge crowd ──────────────────────────────────────
+     观众只是氛围：纯音效，不参与任何数值，也不挡操作。
+     欢呼永远比庄家早半拍，笑点是庄家接话时把气氛按下去。 */
+
+  crowd(kind = "cheer") {
+    if (!this.#enabled()) return;
+    if (kind === "cheer") {
+      [0, 0.06, 0.13, 0.21, 0.3].forEach((delay, i) => {
+        this.noise(0.16 + i * 0.02, 0.02, 1500 + i * 260, delay);
+      });
+      this.tone(523.25, 0.5, "triangle", 0.017, 783.99, 0.08);
+      this.tone(659.25, 0.55, "triangle", 0.013, 987.77, 0.18);
+      return;
+    }
+    if (kind === "gasp") {
+      this.noise(0.34, 0.028, 900);
+      this.tone(320, 0.3, "sine", 0.018, 180, 0.05);
+      return;
+    }
+    this.noise(0.5, 0.011, 500);
+  }
+
   /* ── Payout tray: mechanical chute, pouring rumble, marble clinks ── */
 
   payoutOpen() {

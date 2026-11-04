@@ -2234,3 +2234,183 @@ body[data-table="abyss"] .toast {
   background: rgba(var(--table-second-rgb), 0.14);
   color: #fff5df;
 }
+
+/* ── Challenge / level select ────────────────────────────── */
+
+.challenge-screen {
+  background:
+    radial-gradient(60% 40% at 50% 0%, rgba(143, 32, 32, 0.26), transparent 72%),
+    radial-gradient(48% 34% at 50% 92%, rgba(167, 111, 49, 0.14), transparent 76%),
+    linear-gradient(180deg, rgba(10, 8, 6, 0.12), rgba(9, 8, 6, 0.86));
+}
+
+.dealer-strip {
+  display: flex;
+  gap: 11px;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 11px 13px;
+  border: 1px solid rgba(221, 59, 44, 0.22);
+  border-radius: 14px;
+  background:
+    linear-gradient(100deg, rgba(221, 59, 44, 0.14), transparent 58%),
+    linear-gradient(160deg, rgba(38, 27, 19, 0.94), rgba(20, 15, 11, 0.94));
+}
+
+.dealer-chip {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(231, 181, 102, 0.5);
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 35% 28%, rgba(255, 255, 255, 0.22), transparent 55%),
+    linear-gradient(160deg, #e8c27c, #a97430);
+  color: #241708;
+  font-size: 17px;
+  font-weight: 850;
+  box-shadow:
+    0 6px 16px rgba(0, 0, 0, 0.4),
+    inset 0 0 0 3px rgba(36, 23, 8, 0.14);
+}
+
+.dealer-strip-copy {
+  min-width: 0;
+}
+
+.dealer-strip-copy b {
+  display: block;
+  color: var(--gold-pale);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.dealer-strip-copy p {
+  margin: 3px 0 0;
+  color: rgba(244, 236, 220, 0.54);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.level-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.level-item-btn {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 12px;
+  border: 1px solid rgba(255, 240, 207, 0.1);
+  border-radius: 13px;
+  background:
+    linear-gradient(145deg, rgba(39, 29, 20, 0.9), rgba(21, 16, 12, 0.92));
+  color: var(--cream);
+  text-align: left;
+  transition:
+    border-color 140ms ease,
+    transform 140ms ease,
+    background 140ms ease;
+}
+
+.level-item-btn:active:not(:disabled) {
+  transform: scale(0.988);
+}
+
+.level-item-btn:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.level-item-btn.is-current {
+  border-color: rgba(231, 181, 102, 0.42);
+  background:
+    linear-gradient(145deg, rgba(60, 43, 26, 0.92), rgba(26, 19, 13, 0.94));
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.32);
+}
+
+.level-item-no {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(231, 181, 102, 0.24);
+  border-radius: 10px;
+  background: rgba(231, 181, 102, 0.08);
+  color: var(--gold);
+  font-family: "SFMono-Regular", monospace;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.level-item-btn.is-cleared .level-item-no {
+  border-color: rgba(143, 217, 174, 0.32);
+  background: rgba(143, 217, 174, 0.1);
+  color: #8fd9ae;
+}
+
+.level-item-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.level-item-copy b {
+  overflow: hidden;
+  color: var(--cream);
+  font-size: 13px;
+  font-weight: 750;
+  letter-spacing: 0.03em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.level-item-copy small {
+  color: rgba(244, 236, 220, 0.38);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+}
+
+.level-item-stars {
+  flex: 0 0 auto;
+  color: rgba(244, 236, 220, 0.14);
+  font-size: 14px;
+  letter-spacing: 0.1em;
+}
+
+.level-item-stars i {
+  font-style: normal;
+}
+
+.level-item-stars i.is-lit {
+  color: var(--gold);
+  text-shadow: 0 0 10px rgba(231, 181, 102, 0.55);
+}
+
+.challenge-note {
+  margin: 0 0 8px;
+  color: rgba(244, 236, 220, 0.3);
+  font-size: 10px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.menu-btn.is-challenge .menu-btn-icon {
+  color: #ff8a72;
+}
+
+.menu-btn.is-challenge .menu-btn-main strong::after {
+  content: "";
+}

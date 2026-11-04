@@ -82,15 +82,15 @@
             <span class="menu-btn-arrow" aria-hidden="true">→</span>
           </button>
 
-          <button class="menu-btn menu-locked" id="challengeBtn" type="button" disabled>
+          <button class="menu-btn menu-primary is-challenge" id="challengeBtn" type="button">
             <span class="menu-btn-main">
-              <span class="menu-btn-icon" aria-hidden="true">◇</span>
+              <span class="menu-btn-icon" aria-hidden="true">♠</span>
               <span>
                 <strong>闯关模式</strong>
-                <small>积分、技能树与机关布阵 · 正在打磨</small>
+                <small id="challengeSub">庄家 · 七 坐庄 · 6 关</small>
               </span>
             </span>
-            <span class="menu-badge">未开放</span>
+            <span class="menu-btn-arrow" aria-hidden="true">→</span>
           </button>
 
           <div class="menu-btn-row">
@@ -194,6 +194,30 @@
                 <div class="result-progress" id="resultProgress" hidden></div>
                 <div class="result-foot" id="resultFoot">母球正在返回限位器…</div>
               </div>
+
+              <!-- 闯关模式局内 HUD：目标清单 + 剩余球 -->
+              <div class="challenge-hud" id="challengeHud" hidden>
+                <div class="challenge-hud-head">
+                  <span class="challenge-hud-kicker" id="challengeHudKicker">LEVEL 1 / 6</span>
+                  <b id="challengeHudName">第一课</b>
+                  <span class="challenge-balls"><i>剩</i><b id="challengeBalls">3</b></span>
+                </div>
+                <ul class="objective-list" id="objectiveList"></ul>
+              </div>
+
+              <!-- 关卡卡片：开场挑选道具 / 结算 -->
+              <div class="level-card" id="levelCard" role="dialog" aria-modal="false" aria-hidden="true">
+                <span class="level-card-kicker" id="levelCardKicker">LEVEL 01</span>
+                <h2 id="levelCardTitle">第一课</h2>
+                <p class="level-card-sub" id="levelCardSub"></p>
+                <ul class="level-card-objectives" id="levelCardObjectives"></ul>
+                <div class="loadout-pick" id="loadoutPick" hidden>
+                  <span class="loadout-title">带两件 · <b id="loadoutCount">0</b>/2</span>
+                  <div class="loadout-row" id="loadoutRow"></div>
+                </div>
+                <div class="level-card-stars" id="levelCardStars" hidden></div>
+                <div class="level-card-actions" id="levelCardActions"></div>
+              </div>
             </div>
           </div>
         </main>
@@ -229,27 +253,37 @@
           </div>
 
           <div class="dock-play" id="dockPlay" hidden>
+            <div class="dealer-bar" id="dealerBar" aria-hidden="true" hidden>
+              <span class="dealer-bar-name">七爷</span>
+              <span class="dealer-bar-text" id="dealerBarText"></span>
+            </div>
             <div class="live-head">
               <span class="live-dot" id="liveDot"></span>
               <span id="playStatus" aria-live="polite">奖槽亮灯中…</span>
+              <button class="surrender-btn" id="surrenderBtn" type="button" hidden>认输 · 换牌</button>
             </div>
             <div class="play-meta">
-              <span>投注 <b id="playBet">20</b></span>
-              <span>倍率 <b id="playMult">×2</b></span>
-              <span>奖槽 <b id="playSlots">4</b></span>
+              <span class="meta-arcade">投注 <b id="playBet">20</b></span>
+              <span class="meta-arcade">倍率 <b id="playMult">×2</b></span>
+              <span class="meta-arcade">奖槽 <b id="playSlots">4</b></span>
               <span class="play-lane" id="playLane">等待开启限位器</span>
             </div>
             <div class="tool-tray" id="toolTray" hidden>
               <span class="tool-tray-label">布阵</span>
               <button class="tool-chip" id="magnetToolBtn" type="button" aria-pressed="false">
                 <span class="tool-symbol tool-symbol-magnet">◎</span>
-                <span class="tool-name">磁力钉</span>
+                <span class="tool-name">磁场</span>
                 <b class="tool-count" id="magnetToolCount">1</b>
               </button>
               <button class="tool-chip" id="padToolBtn" type="button" aria-pressed="false">
                 <span class="tool-symbol tool-symbol-pad">◉</span>
-                <span class="tool-name">弹力板</span>
+                <span class="tool-name">挡板</span>
                 <b class="tool-count" id="padToolCount">1</b>
+              </button>
+              <button class="tool-chip" id="hammerToolBtn" type="button" aria-pressed="false">
+                <span class="tool-symbol tool-symbol-hammer">⌁</span>
+                <span class="tool-name">锤子</span>
+                <b class="tool-count" id="hammerToolCount">1</b>
               </button>
               <button class="tool-skip" id="toolSkipBtn" type="button">跳过布阵</button>
             </div>
@@ -325,6 +359,34 @@
           <button class="primary-btn settle-again" id="settleAgainBtn" type="button">再来一局</button>
           <button class="ghost-btn settle-home" id="settleHomeBtn" type="button">返回主界面</button>
         </div>
+      </div>
+    </section>
+
+    <!-- ── 闯关模式 ─────────────────────────────────────────── -->
+    <section class="screen sub-screen challenge-screen" id="challengeScreen" hidden>
+      <div class="panel-shell">
+        <header class="screen-head">
+          <button class="screen-back" id="challengeBack" type="button" aria-label="返回">←</button>
+          <div class="screen-title">
+            <span class="screen-kicker">THE HOUSE DEALS</span>
+            <h1>闯关模式</h1>
+          </div>
+          <span class="screen-mark" aria-hidden="true">♠</span>
+        </header>
+
+        <div class="dealer-strip">
+          <span class="dealer-chip" aria-hidden="true">七</span>
+          <div class="dealer-strip-copy">
+            <b id="dealerStripName">庄家 · 七</b>
+            <p id="dealerStripText">本庄今晚兴致不错。挑一关，别让本庄久等。</p>
+          </div>
+        </div>
+
+        <ol class="level-list" id="levelList"></ol>
+
+        <p class="challenge-note">
+          失败没有惩罚，重开会回到同一副牌。想换牌面可以「认输」——规则不变，只重新摆一次。
+        </p>
       </div>
     </section>
 

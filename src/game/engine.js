@@ -37,6 +37,27 @@ import { PayoutAnimation } from "./payout.js";
 import { getSkin } from "./skins.js";
 import { DEFAULT_TABLE_ID, TABLE_LIST, getTable, hexToRgb } from "./tables.js";
 import {
+  LEVELS,
+  TOOL_DEFS,
+  LOADOUT_SLOTS,
+  SLOT_COUNT,
+  getLevel,
+  nextLevel,
+  levelIndex as levelIndexOf,
+  makeSeed,
+  buildBoard,
+  createObjectiveState,
+  applyLanding,
+  applyDestroy,
+  objectiveList,
+  requiredDone,
+  optionalDone,
+  starCount,
+  initialQuota,
+  slotLabel,
+} from "./levels.js";
+import { pickLine, stageForLevel, DEALER_NAME } from "./dealer.js";
+import {
   buildObstacles,
   resetObstacles,
   randomizeObstacles,
@@ -126,6 +147,28 @@ const magnetToolCount = document.getElementById("magnetToolCount");
 const padToolBtn = document.getElementById("padToolBtn");
 const padToolCount = document.getElementById("padToolCount");
 const toolSkipBtn = document.getElementById("toolSkipBtn");
+
+const surrenderBtn = document.getElementById("surrenderBtn");
+const hammerToolBtn = document.getElementById("hammerToolBtn");
+const hammerToolCount = document.getElementById("hammerToolCount");
+
+const challengeHud = document.getElementById("challengeHud");
+const challengeHudKicker = document.getElementById("challengeHudKicker");
+const challengeHudName = document.getElementById("challengeHudName");
+const objectiveListEl = document.getElementById("objectiveList");
+const challengeBallsEl = document.getElementById("challengeBalls");
+const dealerBar = document.getElementById("dealerBar");
+const dealerBarText = document.getElementById("dealerBarText");
+const levelCard = document.getElementById("levelCard");
+const levelCardKicker = document.getElementById("levelCardKicker");
+const levelCardTitle = document.getElementById("levelCardTitle");
+const levelCardSub = document.getElementById("levelCardSub");
+const levelCardObjectives = document.getElementById("levelCardObjectives");
+const loadoutPick = document.getElementById("loadoutPick");
+const loadoutCount = document.getElementById("loadoutCount");
+const loadoutRow = document.getElementById("loadoutRow");
+const levelCardStars = document.getElementById("levelCardStars");
+const levelCardActions = document.getElementById("levelCardActions");
 
 const workshopDialog = document.getElementById("workshopDialog");
 const workshopClose = document.getElementById("workshopClose");
@@ -276,6 +319,15 @@ function getMagnetConfig() {
   };
 }
 
+/** 闯关模式的道具参数是固定的：MVP 只做 1 级，升级树留到后面。 */
+function getToolConfig(type) {
+  if (game.mode === "challenge") {
+    if (type === "magnet") return { radius: 84, strength: 1.0, duration: 999 };
+    return { radius: 30, restitution: 0.98 };
+  }
+  return type === "magnet" ? getMagnetConfig() : getPadConfig();
+}
+
 function getPadConfig() {
   return {
     radius: 28 + skillLevel("padRadius") * 4,
@@ -327,9 +379,10 @@ const game = {
   flightStartedAt: 0,
   landingResolved: false,
   placingTool: null,
-  toolAvailable: { magnet: 0, pad: 0 },
-  toolBaseCharges: { magnet: 0, pad: 0 },
-  toolPlaced: { magnet: 0, pad: 0 },
+  mode: "arcade", // arcade | challenge
+  toolAvailable: { magnet: 0, pad: 0, hammer: 0 },
+  toolBaseCharges: { magnet: 0, pad: 0, hammer: 0 },
+  toolPlaced: { magnet: 0, pad: 0, hammer: 0 },
   toolScore: 0,
   lastProgress: null,
   bannerTimer: null,
@@ -559,8 +612,8 @@ function applyTable(id, announce = false) {
   game.returnAnim = null;
   game.returnPos = null;
   game.placingTool = null;
-  game.toolAvailable = { magnet: 0, pad: 0 };
-  game.toolPlaced = { magnet: 0, pad: 0 };
+  game.toolAvailable = { magnet: 0, pad: 0, hammer: 0 };
+  game.toolPlaced = { magnet: 0, pad: 0, hammer: 0 };
   resetAbyssRound();
 
   rebuildStaticLayer();
@@ -772,6 +825,10 @@ function stepBallPhysics(b, dt) {
     }
     for (let i = 0; i < activePads.length; i += 1) {
       if (collidePad(b, activePads[i])) touched = true;
+    }
+    if (game.mode === "challenge") {
+      if (collideChallengeTargets(b)) touched = true;
+      if (collideChallengePit(b)) break;
     }
     if (obstacles.length) {
       const events = collideObstacles(b, obstacles, { ignoreWheel: Boolean(b.ignoreWheel) });
@@ -1123,7 +1180,7 @@ account.subscribe(syncAccountUI);
 
 function setPhase(phase) {
   game.phase = phase;
-  const playing = phase !== "idle";
+  const playing = phase !== "idle" || game.mode === "challenge";
   dockIdle.hidden = playing;
   dockPlay.hidden = !playing;
   canvas.classList.toggle("is-ready", phase === "ready");
@@ -1374,14 +1431,26 @@ function awardRoundProgress(payout) {
 }
 
 function prepareToolRound() {
+  if (game.mode === "challenge") {
+    // 闯关模式的配额由关卡决定，而且整关共用：布阵是关级决策，不是球级决策。
+    game.toolBaseCharges = { ...challenge.quota };
+    game.toolAvailable = { ...challenge.quota };
+    game.toolPlaced = { magnet: 0, pad: 0, hammer: 0 };
+    game.toolScore = 0;
+    game.placingTool = null;
+    activeMagnets.length = 0;
+    activePads.length = 0;
+    return;
+  }
   const magnet = getMagnetConfig();
   const pad = getPadConfig();
-  game.toolBaseCharges = { magnet: magnet.charges, pad: pad.charges };
+  game.toolBaseCharges = { magnet: magnet.charges, pad: pad.charges, hammer: 0 };
   game.toolAvailable = {
     magnet: magnet.charges + (game.progress.inventory.magnet || 0),
     pad: pad.charges + (game.progress.inventory.pad || 0),
+    hammer: 0,
   };
-  game.toolPlaced = { magnet: 0, pad: 0 };
+  game.toolPlaced = { magnet: 0, pad: 0, hammer: 0 };
   game.toolScore = 0;
   game.placingTool = null;
   activeMagnets.length = 0;
@@ -1390,20 +1459,30 @@ function prepareToolRound() {
 
 function updateToolTrayUI() {
   const ready = game.phase === "ready";
-  const total = game.toolAvailable.magnet + game.toolAvailable.pad;
+  const available = game.toolAvailable;
+  const total = available.magnet + available.pad + available.hammer;
   const showTray = ready && total > 0;
   toolTray.hidden = !showTray;
   pullMeter.hidden = ready && showTray;
-  magnetToolCount.textContent = String(game.toolAvailable.magnet);
-  padToolCount.textContent = String(game.toolAvailable.pad);
-  magnetToolBtn.disabled = !ready || game.toolAvailable.magnet <= 0;
-  padToolBtn.disabled = !ready || game.toolAvailable.pad <= 0;
-  magnetToolBtn.classList.toggle("is-armed", game.placingTool === "magnet");
-  padToolBtn.classList.toggle("is-armed", game.placingTool === "pad");
-  magnetToolBtn.setAttribute("aria-pressed", String(game.placingTool === "magnet"));
-  padToolBtn.setAttribute("aria-pressed", String(game.placingTool === "pad"));
+  magnetToolCount.textContent = String(available.magnet);
+  padToolCount.textContent = String(available.pad);
+  hammerToolCount.textContent = String(available.hammer);
+  const challengeMode = game.mode === "challenge";
+  // 闯关里只显示本关带进来的道具；街机不会出现锤子。
+  magnetToolBtn.hidden = challengeMode && game.toolBaseCharges.magnet <= 0;
+  padToolBtn.hidden = challengeMode && game.toolBaseCharges.pad <= 0;
+  hammerToolBtn.hidden = !challengeMode || game.toolBaseCharges.hammer <= 0;
+  magnetToolBtn.disabled = !ready || available.magnet <= 0;
+  padToolBtn.disabled = !ready || available.pad <= 0;
+  hammerToolBtn.disabled = !ready || available.hammer <= 0;
+  for (const type of ["magnet", "pad", "hammer"]) {
+    const button = type === "magnet" ? magnetToolBtn : type === "pad" ? padToolBtn : hammerToolBtn;
+    button.classList.toggle("is-armed", game.placingTool === type);
+    button.setAttribute("aria-pressed", String(game.placingTool === type));
+  }
   toolTray.classList.toggle("is-placing", Boolean(game.placingTool));
   canvas.classList.toggle("is-placing", Boolean(game.placingTool));
+  surrenderBtn.hidden = !(game.mode === "challenge" && challenge.active && !challenge.ending);
   if (!ready) game.placingTool = null;
 }
 
@@ -1421,9 +1500,11 @@ function armTool(type) {
   hideHint();
   updateToolTrayUI();
   if (type === "magnet") {
-    setPlayStatus("点击机台上的钉子，放置磁力钉", `剩余 ${game.toolAvailable.magnet} 枚`, true);
+    setPlayStatus("点击机台上的钉子，放置磁场", `剩余 ${game.toolAvailable.magnet} 枚`, true);
+  } else if (type === "hammer") {
+    setPlayStatus("点击一颗钉子或一个目标，敲碎它", `剩余 ${game.toolAvailable.hammer} 次`, true);
   } else {
-    setPlayStatus("点击机台上的空位，放置弹力板", `剩余 ${game.toolAvailable.pad} 块`, true);
+    setPlayStatus("点击机台上的空位，放置挡板", `剩余 ${game.toolAvailable.pad} 块`, true);
   }
   audio.click();
 }
@@ -1579,7 +1660,7 @@ function attemptToolPlacement(point) {
       toast("请点击一颗钉子放置磁力钉");
       return false;
     }
-    const config = getMagnetConfig();
+    const config = getToolConfig("magnet");
     activeMagnets.push({
       pegId: nearest.id,
       x: nearest.x,
@@ -1596,8 +1677,10 @@ function attemptToolPlacement(point) {
     consumeToolPlacement("magnet");
     spawnToolBurst(nearest.x, nearest.y, "#8ed0be");
     audio.tone(620, 0.1, "sine", 0.04, 820);
+  } else if (type === "hammer") {
+    return attemptHammerStrike(point);
   } else {
-    const config = getPadConfig();
+    const config = getToolConfig("pad");
     const radius = config.radius;
     if (
       point.x < 102 + radius ||
@@ -1641,6 +1724,841 @@ function attemptToolPlacement(point) {
     setPlayStatus("布阵完成 · 拉下弹簧发射", "弱力擦顶，强力更远", true);
     showHint("布阵完成，拉下弹簧发射", 2600);
   }
+  return true;
+}
+
+/* ============================================================
+   闯关模式运行时
+   ------------------------------------------------------------
+   规则（目标洞、球数、配额）来自 levels.js，认输时不变；
+   牌面（干扰钉、目标位置）由种子决定，认输时重掷。
+   ============================================================ */
+
+const challenge = {
+  active: false,
+  level: null,
+  index: 0,
+  seed: 0,
+  stage: "guide",
+  ballsLeft: 0,
+  ballsUsed: 0,
+  objectives: createObjectiveState(),
+  quota: { magnet: 0, pad: 0, hammer: 0 },
+  loadout: [],
+  interference: [],
+  targets: [],
+  pit: null,
+  cleared: false,
+  ending: false,
+  cheats: 0,
+  stars: 0,
+  cardOpen: false,
+  pointer: null,
+  pointerTimer: 0,
+  dealerTimer: 0,
+  dealerHideTimer: 0,
+  dealerPriority: 0,
+  dealerAt: 0,
+};
+
+const DEALER_PRIORITY = {
+  cheat: 4,
+  intro: 3,
+  clear: 3,
+  fail: 2,
+  surrender: 2,
+  hit: 1,
+  nearMiss: 1,
+  destroy: 1,
+  idle: 0,
+};
+
+function setMode(mode) {
+  game.mode = mode;
+  document.body.dataset.mode = mode;
+}
+
+function emptyQuota() {
+  return { magnet: 0, pad: 0, hammer: 0 };
+}
+
+function challengeQuotaFor(level, loadout) {
+  const quota = emptyQuota();
+  for (const id of loadout) quota[id] = level.quota[id] || 0;
+  return quota;
+}
+
+function defaultLoadout(level) {
+  return level.tools.filter((id) => (level.quota[id] || 0) > 0).slice(0, LOADOUT_SLOTS);
+}
+
+function firstTargetLabel(level) {
+  const list = objectiveList(level, createObjectiveState());
+  return list.required[0]?.label || "目标";
+}
+
+/* ── 开局 ───────────────────────────────────────────────── */
+
+function startChallengeLevel(levelId, options = {}) {
+  const level = getLevel(levelId);
+  if (!level) return false;
+  audio.init();
+  setMode("challenge");
+  setPhase("idle");
+  if (activeTable.id !== level.scene) applyTable(level.scene);
+
+  clearScheduled();
+  payoutFx.stop();
+  hideResultCard();
+  hideBanner();
+  hideHint();
+
+  challenge.active = true;
+  challenge.level = level;
+  challenge.index = levelIndexOf(level.id);
+  challenge.stage = stageForLevel(challenge.index);
+  challenge.seed = Number.isFinite(options.seed) ? options.seed >>> 0 : makeSeed();
+  challenge.ballsLeft = level.balls;
+  challenge.ballsUsed = 0;
+  challenge.objectives = createObjectiveState();
+  challenge.cleared = false;
+  challenge.ending = false;
+  challenge.cheats = 0;
+  challenge.stars = 0;
+  challenge.pit = null;
+  challenge.loadout = defaultLoadout(level);
+  challenge.quota = challengeQuotaFor(level, challenge.loadout);
+  challenge.pointer = null;
+  game.toolAvailable = emptyQuota();
+  game.toolBaseCharges = emptyQuota();
+  game.toolPlaced = emptyQuota();
+  game.placingTool = null;
+
+  account.setChallengeLastLevel(level.id);
+  setupChallengeBoard();
+  updateChallengeHud();
+  updateToolTrayUI();
+  showLevelIntro(level);
+  return true;
+}
+
+function setupChallengeBoard() {
+  const level = challenge.level;
+  buildWorld();
+  resetObstacles(obstacles);
+  randomizeObstacles(obstacles);
+  const board = buildBoard(level, challenge.seed, pegs);
+  challenge.interference = board.interference;
+  for (const peg of board.interference) {
+    pegs.push({ ...peg, glow: 0, lastHit: 0 });
+  }
+  challenge.targets = board.targets;
+  challenge.pit = null;
+  activeMagnets.length = 0;
+  activePads.length = 0;
+  particles.length = 0;
+  resetChallengeBall();
+  rebuildStaticLayer();
+  requestAnimationFrame(fitMachine);
+}
+
+function resetChallengeBall() {
+  ball.x = STAGE.x;
+  ball.y = STAGE.y;
+  ball.prevX = STAGE.x;
+  ball.prevY = STAGE.y;
+  ball.vx = 0;
+  ball.vy = 0;
+  ball.trail.length = 0;
+  ball.spin = 0;
+  ball.stallTime = 0;
+  ball.hidden = false;
+  game.gate = 0;
+  game.gateTarget = 0;
+  game.drop = null;
+  game.returnAnim = null;
+  game.returnPos = null;
+  game.landingResolved = false;
+  game.mainResolved = false;
+  game.mainDestroyed = false;
+  game.charging = false;
+  game.charge = 0;
+  game.chargeMode = null;
+  game.pointerId = null;
+  game.suspense = 0;
+  game.lastSlot = null;
+  game.flashSlot = null;
+  game.result = null;
+  game.springRelease = null;
+  resetAbyssRound();
+  setPhase("idle");
+  setPowerUI(0, "ready");
+}
+
+function beginChallengeBall() {
+  if (!challenge.active || challenge.ending) return;
+  if (challenge.ballsLeft <= 0) {
+    finishChallengeLevel(false);
+    return;
+  }
+  clearScheduled();
+  payoutFx.stop();
+  hideLevelCard();
+  resetChallengeBall();
+  game.placingTool = null;
+  updateToolTrayUI();
+  updateChallengeHud();
+
+  setPhase("starting");
+  setPowerUI(0, "starting");
+  setRoundBadge("live", "限位器开启");
+  setPlayStatus(
+    `第 ${challenge.ballsUsed + 1} 球 · 限位器开启`,
+    `还剩 ${challenge.ballsLeft} 球`,
+    true,
+  );
+  schedule(openGate, 620);
+}
+
+/* ── HUD ────────────────────────────────────────────────── */
+
+function updateChallengeHud() {
+  const level = challenge.level;
+  if (!level) {
+    challengeHud.hidden = true;
+    return;
+  }
+  challengeHud.hidden = false;
+  challengeHudKicker.textContent = `LEVEL ${challenge.index + 1} / ${LEVELS.length}`;
+  challengeHudName.textContent = level.name;
+  challengeBallsEl.textContent = String(Math.max(0, challenge.ballsLeft));
+  challengeBallsEl.parentElement.classList.toggle("is-low", challenge.ballsLeft <= 1);
+
+  const list = objectiveList(level, challenge.objectives);
+  const rows = [
+    ...list.required.map(
+      (item) => `<li class="${item.done ? "is-done" : ""}">${item.label}</li>`,
+    ),
+    ...list.optional.map(
+      (item) => `<li class="is-optional ${item.done ? "is-done" : ""}">${item.label}</li>`,
+    ),
+    ...list.avoid.map((item) => `<li class="is-guard">${item.label}</li>`),
+  ];
+  objectiveListEl.innerHTML = rows.join("");
+}
+
+function renderCardObjectives(level, state) {
+  const list = objectiveList(level, state);
+  const rows = [
+    ...list.required.map(
+      (item) =>
+        `<li class="${item.done ? "is-done" : ""}"><span>${item.label}</span><span class="rule-tag">必选</span></li>`,
+    ),
+    ...list.optional.map(
+      (item) =>
+        `<li class="is-optional ${item.done ? "is-done" : ""}"><span>${item.label}</span><span class="rule-tag">奖励</span></li>`,
+    ),
+    ...list.avoid.map(
+      (item) => `<li class="is-guard"><span>${item.label}</span><span class="rule-tag">禁区</span></li>`,
+    ),
+  ];
+  levelCardObjectives.innerHTML = rows.join("");
+}
+
+function renderLoadout() {
+  const level = challenge.level;
+  const tools = level.tools.filter((id) => (level.quota[id] || 0) > 0);
+  if (tools.length <= LOADOUT_SLOTS) {
+    loadoutPick.hidden = true;
+    return;
+  }
+  loadoutPick.hidden = false;
+  loadoutCount.textContent = String(challenge.loadout.length);
+  loadoutRow.innerHTML = "";
+  for (const id of tools) {
+    const def = TOOL_DEFS[id];
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = `loadout-chip${challenge.loadout.includes(id) ? " is-picked" : ""}`;
+    button.innerHTML = `<span class="loadout-symbol">${def.symbol}</span><span>${def.name}</span><span class="loadout-quota">×${level.quota[id]}</span>`;
+    button.addEventListener("click", () => {
+      audio.click();
+      toggleLoadout(id);
+    });
+    loadoutRow.appendChild(button);
+  }
+}
+
+function toggleLoadout(id) {
+  const index = challenge.loadout.indexOf(id);
+  if (index >= 0) {
+    challenge.loadout.splice(index, 1);
+  } else {
+    // 选满以后点新的会顶掉最早选的那件，省得玩家还要先取消一次。
+    if (challenge.loadout.length >= LOADOUT_SLOTS) challenge.loadout.shift();
+    challenge.loadout.push(id);
+  }
+  renderLoadout();
+}
+
+/* ── 关卡卡片 ───────────────────────────────────────────── */
+
+function showLevelIntro(level) {
+  challenge.cardOpen = true;
+  document.body.dataset.card = "1";
+  levelCard.hidden = false;
+  levelCard.classList.remove("is-clear", "is-fail");
+  levelCard.classList.add("is-visible");
+  levelCardKicker.textContent = `LEVEL ${String(challenge.index + 1).padStart(2, "0")} · ${level.kicker}`;
+  levelCardTitle.textContent = level.name;
+  levelCardSub.textContent = pickLine(challenge.stage, "intro", {
+    target: firstTargetLabel(level),
+  });
+  renderCardObjectives(level, challenge.objectives);
+  renderLoadout();
+  levelCardStars.hidden = true;
+  levelCardActions.innerHTML = "";
+
+  const start = document.createElement("button");
+  start.type = "button";
+  start.className = "primary-btn";
+  start.textContent = "开局";
+  start.addEventListener("click", () => {
+    audio.init();
+    audio.click();
+    beginChallengeFromCard();
+  });
+  levelCardActions.appendChild(start);
+}
+
+function beginChallengeFromCard() {
+  if (!challenge.cardOpen) return;
+  challenge.cardOpen = false;
+  challenge.quota = challengeQuotaFor(challenge.level, challenge.loadout);
+  prepareToolRound();
+  hideLevelCard();
+  updateChallengeHud();
+  const level = challenge.level;
+  dealerSay("intro", { target: firstTargetLabel(level) });
+  pointAtFirstTarget();
+  beginChallengeBall();
+}
+
+function hideLevelCard() {
+  challenge.cardOpen = false;
+  document.body.dataset.card = "";
+  levelCard.classList.remove("is-visible");
+  levelCard.setAttribute("aria-hidden", "true");
+  window.setTimeout(() => {
+    if (!levelCard.classList.contains("is-visible")) levelCard.hidden = true;
+  }, 240);
+}
+
+function showLevelResult(cleared, stars) {
+  const level = challenge.level;
+  challenge.cardOpen = true;
+  document.body.dataset.card = "1";
+  levelCard.hidden = false;
+  levelCard.classList.toggle("is-clear", cleared);
+  levelCard.classList.toggle("is-fail", !cleared);
+  levelCard.classList.add("is-visible");
+  levelCardKicker.textContent = cleared
+    ? `LEVEL ${String(challenge.index + 1).padStart(2, "0")} · CLEARED`
+    : `LEVEL ${String(challenge.index + 1).padStart(2, "0")} · BUSTED`;
+  levelCardTitle.textContent = cleared ? "过关" : "出局";
+  levelCardSub.textContent = pickLine(challenge.stage, cleared ? "clear" : "fail");
+  renderCardObjectives(level, challenge.objectives);
+
+  levelCardStars.hidden = false;
+  levelCardStars.innerHTML = [0, 1, 2]
+    .map((i) => `<i class="${i < stars ? "is-lit" : ""}">★</i>`)
+    .join("");
+
+  levelCardActions.innerHTML = "";
+  const next = cleared ? nextLevel(level.id) : null;
+  if (next) {
+    const nextBtn = document.createElement("button");
+    nextBtn.type = "button";
+    nextBtn.className = "primary-btn";
+    nextBtn.textContent = `下一关 · ${next.name}`;
+    nextBtn.addEventListener("click", () => {
+      audio.click();
+      startChallengeLevel(next.id);
+    });
+    levelCardActions.appendChild(nextBtn);
+  }
+
+  const row = document.createElement("div");
+  row.className = "row";
+
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.className = cleared ? "ghost-btn" : "primary-btn";
+  retry.style.flex = "1 1 0";
+  retry.textContent = "重开 · 同一副牌";
+  retry.addEventListener("click", () => {
+    audio.click();
+    startChallengeLevel(level.id, { seed: challenge.seed });
+  });
+  row.appendChild(retry);
+
+  const redeal = document.createElement("button");
+  redeal.type = "button";
+  redeal.className = "ghost-btn";
+  redeal.style.flex = "1 1 0";
+  redeal.textContent = "换一副牌";
+  redeal.addEventListener("click", () => {
+    audio.click();
+    startChallengeLevel(level.id);
+  });
+  row.appendChild(redeal);
+  levelCardActions.appendChild(row);
+
+  const back = document.createElement("button");
+  back.type = "button";
+  back.className = "ghost-btn";
+  back.textContent = "回到关卡表";
+  back.addEventListener("click", () => {
+    audio.click();
+    leaveChallenge();
+  });
+  levelCardActions.appendChild(back);
+}
+
+/* ── 庄家 ───────────────────────────────────────────────── */
+
+function dealerSay(event, vars = {}) {
+  if (!challenge.active) return;
+  const priority = DEALER_PRIORITY[event] ?? 1;
+  const now = performance.now();
+  // 同一时刻只允许一条播报：高优先级可以抢话，低优先级不许打断正在说的话。
+  if (priority < challenge.dealerPriority && now - challenge.dealerAt < 1400) return;
+  const line = pickLine(challenge.stage, event, vars);
+  if (!line) return;
+  challenge.dealerPriority = priority;
+  challenge.dealerAt = now;
+  dealerBar.hidden = false;
+  dealerBarText.textContent = line;
+  dealerBar.classList.toggle("is-gloating", challenge.stage === "mad");
+  dealerBar.classList.add("is-visible");
+  window.clearTimeout(challenge.dealerTimer);
+  window.clearTimeout(challenge.dealerHideTimer);
+  challenge.dealerTimer = window.setTimeout(() => {
+    dealerBar.classList.remove("is-visible");
+    challenge.dealerPriority = 0;
+    challenge.dealerHideTimer = window.setTimeout(() => {
+      if (!dealerBar.classList.contains("is-visible")) dealerBar.hidden = true;
+    }, 240);
+  }, 2600);
+}
+
+function hideDealerBar() {
+  window.clearTimeout(challenge.dealerTimer);
+  window.clearTimeout(challenge.dealerHideTimer);
+  dealerBar.classList.remove("is-visible");
+  challenge.dealerPriority = 0;
+  dealerBar.hidden = true;
+}
+
+/** 筹码指针：从屏幕左上飞到目标，落定脉动两下。 */
+function dealerPoint(x, y, hold = 1700) {
+  challenge.pointer = {
+    fromX: -40,
+    fromY: 120,
+    x,
+    y,
+    start: performance.now(),
+    flight: 420,
+    hold,
+  };
+  window.clearTimeout(challenge.pointerTimer);
+  challenge.pointerTimer = window.setTimeout(() => {
+    challenge.pointer = null;
+  }, 420 + hold);
+}
+
+function pointAtFirstTarget() {
+  const level = challenge.level;
+  const required = level.required || [];
+  const hole = required.find((item) => item.type === "hole");
+  if (hole && hole.slots.length) {
+    const index = hole.slots[0];
+    dealerPoint(SLOT.x0 + (index + 0.5) * SLOT.width, SLOT.top + 26);
+    return;
+  }
+  const destroy = required.find((item) => item.type === "destroy");
+  const target = destroy && challenge.targets.find((item) => !item.dead);
+  if (target) dealerPoint(target.x, target.y);
+}
+
+/* ── 落点结算 ───────────────────────────────────────────── */
+
+function resolveChallengeLanding() {
+  if (game.landingResolved || game.mainResolved) return;
+  const index = getSlotIndex(ball.x);
+  game.landingResolved = true;
+  game.mainResolved = true;
+  game.lastSlot = index;
+  game.flashSlot = index;
+  game.flashAt = performance.now();
+  challenge.ballsUsed += 1;
+  challenge.ballsLeft = Math.max(0, challenge.ballsLeft - 1);
+
+  const result = applyLanding(challenge.objectives, index, challenge.level);
+  spawnSlotBurst(ball.x, 982, !result.failed);
+  updateChallengeHud();
+
+  if (result.failed) {
+    audio.crowd("gasp");
+    audio.lose();
+    vibrate([18, 40, 25]);
+    setRoundBadge("live", `踩到禁区 · ${slotLabel(index)}`);
+    setPlayStatus(`母球落进了${slotLabel(index)}`, "这是庄家划掉的洞", false);
+    dealerSay("fail");
+    schedule(() => finishChallengeLevel(false), 1300);
+    return;
+  }
+
+  const done = requiredDone(challenge.level, challenge.objectives);
+  if (done) {
+    audio.crowd("cheer");
+    audio.win(true);
+    vibrate([18, 40, 25]);
+    setRoundBadge("live", "目标达成");
+    setPlayStatus("全部必选目标完成", "庄家没话说了", true);
+    dealerSay("clear");
+    schedule(() => finishChallengeLevel(true), 1200);
+    return;
+  }
+
+  if (challenge.ballsLeft <= 0) {
+    audio.lose();
+    setRoundBadge("live", "球用完了");
+    setPlayStatus("没有球了", "目标还没完成", false);
+    dealerSay("fail");
+    schedule(() => finishChallengeLevel(false), 1200);
+    return;
+  }
+
+  audio.peg(0.7);
+  setRoundBadge("live", `落入${slotLabel(index)}`);
+  setPlayStatus(`落在${slotLabel(index)}`, `还剩 ${challenge.ballsLeft} 球`, true);
+  dealerSay("hit");
+  schedule(() => challengeReturnBall(), 950);
+}
+
+/** 母球掉进庄家挖的洞：本球作废，不推进目标。 */
+function swallowChallengeBall() {
+  if (game.landingResolved) return;
+  game.landingResolved = true;
+  game.mainResolved = true;
+  ball.hidden = true;
+  ball.vx = 0;
+  ball.vy = 0;
+  ball.trail.length = 0;
+  challenge.ballsUsed += 1;
+  challenge.ballsLeft = Math.max(0, challenge.ballsLeft - 1);
+  updateChallengeHud();
+  audio.tone(140, 0.4, "sawtooth", 0.06, 60);
+  audio.noise(0.3, 0.05, 900);
+  game.shake = Math.min(1.6, game.shake + 0.9);
+  vibrate([25, 50, 25]);
+  setRoundBadge("live", "被洞吞了");
+  setPlayStatus("母球掉进了庄家的洞", "这一球作废", false);
+  dealerSay("cheat");
+  if (challenge.ballsLeft <= 0) {
+    schedule(() => finishChallengeLevel(false), 1300);
+  } else {
+    schedule(() => {
+      ball.hidden = false;
+      challengeReturnBall();
+    }, 1100);
+  }
+}
+
+function challengeReturnBall() {
+  if (!challenge.active || challenge.ending) return;
+  if (game.phase === "returning") return;
+  const slotCenter =
+    game.lastSlot === null ? STAGE.x : SLOT.x0 + (game.lastSlot + 0.5) * SLOT.width;
+  game.returnAnim = {
+    start: performance.now(),
+    duration: 1500,
+    fromX: slotCenter,
+    fromY: Math.min(ball.y, SLOT.floor - 8),
+    slotCenter,
+  };
+  game.returnPos = { x: slotCenter, y: SLOT.floor - 8, angle: 0 };
+  game.phase = "returning";
+  game.charge = 0;
+  game.gateTarget = 0;
+  setPhase("returning");
+  setRoundBadge("live", "回球中");
+}
+
+function finishChallengeReturn() {
+  game.phase = "idle";
+  game.returnAnim = null;
+  game.returnPos = null;
+  game.result = null;
+  game.lastSlot = null;
+  game.flashSlot = null;
+  game.charging = false;
+  game.charge = 0;
+  ball.x = STAGE.x;
+  ball.y = STAGE.y;
+  ball.vx = 0;
+  ball.vy = 0;
+  ball.trail.length = 0;
+  ball.hidden = false;
+  setPhase("idle");
+  setPowerUI(0, "ready");
+  if (maybeBossCheat()) {
+    schedule(() => beginChallengeBall(), 2200);
+  } else {
+    beginChallengeBall();
+  }
+}
+
+function finishChallengeLevel(cleared) {
+  if (challenge.ending) return;
+  challenge.ending = true;
+  clearScheduled();
+  hideDealerBar();
+  const level = challenge.level;
+  challenge.cleared = cleared;
+  const stars = starCount(level, challenge.objectives, {
+    cleared,
+    ballsUsed: challenge.ballsUsed,
+  });
+  challenge.stars = stars;
+  const before = account.challengeStars(level.id);
+  account.recordChallengeStars(level.id, stars);
+  if (stars > before) {
+    bumpNumber(challengeBallsEl);
+    audio.ticket();
+  }
+  game.phase = "idle";
+  ball.hidden = false;
+  ball.x = STAGE.x;
+  ball.y = STAGE.y;
+  ball.vx = 0;
+  ball.vy = 0;
+  ball.trail.length = 0;
+  game.gate = 0;
+  game.gateTarget = 0;
+  game.charging = false;
+  game.charge = 0;
+  updateChallengeHud();
+  if (!cleared) audio.crowd("hush");
+  // 观众先起哄，庄家晚半拍才泼冷水——这个时间差就是笑点。
+  schedule(() => showLevelResult(cleared, Math.max(stars, before)), cleared ? 380 : 120);
+  if (!cleared && challenge.ballsLeft > 0) {
+    // 禁区失败时球还没用完，结算卡同样只展示成绩。
+    challenge.ballsLeft = challenge.ballsLeft;
+  }
+}
+
+function leaveChallenge() {
+  challenge.active = false;
+  challenge.ending = false;
+  challenge.level = null;
+  challenge.pointer = null;
+  hideDealerBar();
+  hideLevelCard();
+  document.body.dataset.card = "";
+  challengeHud.hidden = true;
+  challenge.targets = [];
+  challenge.pit = null;
+  challenge.interference = [];
+  game.placingTool = null;
+  game.toolAvailable = emptyQuota();
+  game.toolBaseCharges = emptyQuota();
+  clearScheduled();
+  particles.length = 0;
+  activeMagnets.length = 0;
+  activePads.length = 0;
+  setPhase("idle");
+  challengeHud.hidden = true;
+  game.mode = "arcade";
+  document.body.dataset.mode = "";
+  document.body.dataset.card = "";
+  // 闯关固定用橡木经典，而干扰钉和庄家塞进来的钉子都直接改了 pegs。
+  // 离开时必须重建回账号装备的那台机台，否则钉子会漏进下一局街机。
+  const homeTable = account.equippedTable;
+  if (homeTable && homeTable !== activeTable.id) {
+    applyTable(homeTable);
+  } else {
+    buildWorld();
+    rebuildStaticLayer();
+  }
+  window.dispatchEvent(new CustomEvent("marble:challenge"));
+}
+
+/* ── 庄家作弊（BOSS） ───────────────────────────────────── */
+
+function maybeBossCheat() {
+  const level = challenge.level;
+  if (!level || !level.boss || challenge.ending) return false;
+  if (challenge.cheats >= 3) return false;
+  const step = challenge.cheats;
+
+  if (step === 0) {
+    const x = 232 + Math.random() * 250;
+    challenge.pit = { x, y: 866, r: 27, born: performance.now() };
+    dealerSay("cheat");
+    dealerPoint(x, 866, 1600);
+    audio.tone(120, 0.5, "sawtooth", 0.07, 50);
+    game.shake = Math.min(1.8, game.shake + 1.1);
+    setPlayStatus("庄家在台面上挖了个洞", "球进去就没了", true);
+  } else if (step === 1) {
+    const xs = [232 + Math.random() * 60, 400 + Math.random() * 80];
+    for (const x of xs) {
+      pegs.push({
+        id: `boss-${challenge.cheats}-${Math.round(x)}`,
+        x,
+        y: 690 + Math.random() * 50,
+        r: 7.6,
+        kind: "splitter",
+        hue: "red",
+        phase: Math.random() * 6.28,
+        glow: 0,
+        lastHit: 0,
+      });
+    }
+    rebuildStaticLayer();
+    dealerPoint(xs[0], 700, 1500);
+    dealerSay("cheat");
+    setPlayStatus("庄家又塞了两颗钉子", "台面已经不是刚才那张了", true);
+  } else {
+    const owned = ["magnet", "pad", "hammer"].filter((id) => game.toolAvailable[id] > 0);
+    if (owned.length) {
+      const id = owned[Math.floor(Math.random() * owned.length)];
+      game.toolAvailable[id] -= 1;
+      updateToolTrayUI();
+      setPlayStatus(`庄家收走了你一次「${TOOL_DEFS[id].name}」`, "他连招呼都不打", true);
+    }
+    dealerSay("cheat");
+  }
+
+  challenge.cheats += 1;
+  return true;
+}
+
+/* ── 锤子 ───────────────────────────────────────────────── */
+
+function attemptHammerStrike(point) {
+  let bestTarget = null;
+  let bestDist = Infinity;
+  for (const target of challenge.targets) {
+    if (target.dead) continue;
+    const dist = Math.hypot(point.x - target.x, point.y - target.y);
+    if (dist < target.r + 26 && dist < bestDist) {
+      bestDist = dist;
+      bestTarget = target;
+    }
+  }
+  if (bestTarget) {
+    bestTarget.hp = 0;
+    hitChallengeTarget(bestTarget, null);
+    finishHammerStrike();
+    return true;
+  }
+
+  let bestPeg = null;
+  bestDist = 40;
+  for (const peg of pegs) {
+    const dist = Math.hypot(point.x - peg.x, point.y - peg.y);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestPeg = peg;
+    }
+  }
+  if (bestPeg) {
+    const index = pegs.indexOf(bestPeg);
+    if (index >= 0) pegs.splice(index, 1);
+    spawnToolBurst(bestPeg.x, bestPeg.y, "#e59a78");
+    audio.wall(1.4);
+    audio.tone(180, 0.16, "square", 0.05, 90);
+    game.shake = Math.min(1.4, game.shake + 0.5);
+    rebuildStaticLayer();
+    finishHammerStrike();
+    return true;
+  }
+
+  toast("锤子要敲钉子或可破坏目标");
+  return false;
+}
+
+function finishHammerStrike() {
+  game.toolScore += 3;
+  consumeToolPlacement("hammer");
+  updateToolTrayUI();
+  if (game.toolAvailable.hammer <= 0 && game.placingTool === "hammer") {
+    game.placingTool = null;
+    updateToolTrayUI();
+  }
+  if (game.placingTool) {
+    setPlayStatus("继续点击要敲掉的东西", "也可以直接拉杆发射", true);
+  } else {
+    setPlayStatus("布阵完成 · 拉下弹簧发射", "弱力擦顶，强力更远", true);
+  }
+}
+
+/* ── 目标实体 ───────────────────────────────────────────── */
+
+function collideChallengeTargets(b) {
+  if (!challenge.targets.length) return false;
+  let touched = false;
+  for (const target of challenge.targets) {
+    if (target.dead) continue;
+    const dx = b.x - target.x;
+    const dy = b.y - target.y;
+    const dist = Math.hypot(dx, dy);
+    const min = b.r + target.r;
+    if (dist >= min) continue;
+    const nx = dist === 0 ? 0 : dx / dist;
+    const ny = dist === 0 ? -1 : dy / dist;
+    b.x = target.x + nx * min;
+    b.y = target.y + ny * min;
+    const vn = b.vx * nx + b.vy * ny;
+    if (vn < 0) {
+      b.vx -= vn * 1.45 * nx;
+      b.vy -= vn * 1.45 * ny;
+    }
+    hitChallengeTarget(target, b);
+    touched = true;
+  }
+  return touched;
+}
+
+function hitChallengeTarget(target, body) {
+  if (target.dead) return;
+  target.hp -= 1;
+  target.flash = 1;
+  target.hit += 1;
+  spawnNeonBurst(target.x, target.y, "#ff8a5c", 10, 1.1);
+  audio.peg(1.2);
+  audio.tone(240 - target.hit * 30, 0.12, "square", 0.04, 140);
+  game.shake = Math.min(1.3, game.shake + 0.18);
+  if (target.hp <= 0) {
+    target.dead = true;
+    applyDestroy(challenge.objectives, target.id);
+    spawnNeonBurst(target.x, target.y, "#ffd08a", 22, 1.6);
+    audio.win(false);
+    game.shake = Math.min(1.6, game.shake + 0.35);
+    vibrate(16);
+    updateChallengeHud();
+    dealerSay("destroy");
+  }
+  if (body) body.vx *= 0.995;
+}
+
+function collideChallengePit(b) {
+  const pit = challenge.pit;
+  if (!pit || game.landingResolved || b.hidden) return false;
+  if (Math.hypot(b.x - pit.x, b.y - pit.y) >= pit.r) return false;
+  swallowChallengeBall();
   return true;
 }
 
@@ -1956,8 +2874,17 @@ function openGate() {
     setPhase("ready");
     setPowerUI(0, "ready");
     setRoundBadge("ready", "待发射");
-    setPlayStatus("拉下弹簧，松手发射", "弱力擦顶，强力更远", true);
-    showHint("弱力刚好越过通道顶部，强力送得更远", 5200);
+    if (game.mode === "challenge") {
+      setPlayStatus(
+        "布阵 · 或者直接拉杆",
+        `第 ${challenge.ballsUsed + 1} 球 · 剩 ${challenge.ballsLeft} 球`,
+        true,
+      );
+      showHint("先把道具布好，再拉下弹簧", 4200);
+    } else {
+      setPlayStatus("拉下弹簧，松手发射", "弱力擦顶，强力更远", true);
+      showHint("弱力刚好越过通道顶部，强力送得更远", 5200);
+    }
     audio.tone(392, 0.12, "sine", 0.04, 523.25);
   }, 980);
 }
@@ -2539,6 +3466,10 @@ function endResolvedRound(result) {
 function resolveLanding() {
   if (game.landingResolved || game.mainResolved) return;
   if (game.wheel.active) return;
+  if (game.mode === "challenge") {
+    resolveChallengeLanding();
+    return;
+  }
   const index = getSlotIndex(ball.x);
   const won = game.litSlots.has(index);
   const payout = won ? game.bet * game.multiplier : 0;
@@ -2584,6 +3515,22 @@ function resolveLanding() {
 function resolveMissedMain() {
   if (game.landingResolved || game.mainResolved) return;
   if (game.wheel.active) return;
+  if (game.mode === "challenge") {
+    game.landingResolved = true;
+    game.mainResolved = true;
+    challenge.ballsUsed += 1;
+    challenge.ballsLeft = Math.max(0, challenge.ballsLeft - 1);
+    updateChallengeHud();
+    setRoundBadge("live", "母球回到发射舱");
+    setPlayStatus("这一球没进台面", `还剩 ${challenge.ballsLeft} 球`, false);
+    audio.lose();
+    if (challenge.ballsLeft <= 0) {
+      schedule(() => finishChallengeLevel(false), 1100);
+    } else {
+      schedule(() => beginChallengeBall(), 1100);
+    }
+    return;
+  }
   const index = getSlotIndex(clamp(ball.x, SLOT.x0 + 1, SLOT.x1 - 1));
   game.landingResolved = true;
   game.mainResolved = true;
@@ -2631,6 +3578,10 @@ function beginReturn() {
 
 function finishReturn() {
   if (game.phase !== "returning") return;
+  if (game.mode === "challenge") {
+    finishChallengeReturn();
+    return;
+  }
   game.phase = "idle";
   game.returnAnim = null;
   game.returnPos = null;
@@ -2652,8 +3603,8 @@ function finishReturn() {
   activeMagnets.length = 0;
   activePads.length = 0;
   game.placingTool = null;
-  game.toolAvailable = { magnet: 0, pad: 0 };
-  game.toolPlaced = { magnet: 0, pad: 0 };
+  game.toolAvailable = { magnet: 0, pad: 0, hammer: 0 };
+  game.toolPlaced = { magnet: 0, pad: 0, hammer: 0 };
   game.toolScore = 0;
   resetAbyssRound();
   updateToolTrayUI();
@@ -4490,6 +5441,252 @@ function drawSuspenseOverlay(now) {
 
 /* ── Render: master ──────────────────────────────────────── */
 
+/* ── 闯关模式的绘制 ─────────────────────────────────────── */
+
+function drawChallengeBoard(now) {
+  const level = challenge.level;
+  if (!level || !challenge.active) return;
+  drawChallengeHoleFlags(now, level);
+  drawChallengeTargets();
+  drawChallengePit(now);
+  drawDealerPointer(now);
+}
+
+function drawChallengeHoleFlags(now, level) {
+  const state = challenge.objectives;
+  const pulse = 0.55 + 0.45 * Math.sin(now / 300);
+  const flags = [];
+  for (const rule of level.required || []) {
+    if (rule.type !== "hole") continue;
+    if (rule.slots.every((slot) => state.holes.has(slot))) continue;
+    for (const slot of rule.slots) {
+      flags.push({ slot, color: "#f0c979", pulse, kind: "required" });
+    }
+  }
+  for (const rule of level.optional || []) {
+    if (rule.type !== "hole") continue;
+    if (rule.slots.every((slot) => state.holes.has(slot))) continue;
+    for (const slot of rule.slots) {
+      flags.push({ slot, color: "#e9dfc4", pulse: pulse * 0.62, kind: "optional" });
+    }
+  }
+  for (const rule of level.avoid || []) {
+    for (const slot of rule.slots) {
+      flags.push({ slot, color: "#dd3b2c", pulse: 0.85, kind: "avoid" });
+    }
+  }
+
+  for (const flag of flags) {
+    const left = SLOT.x0 + flag.slot * SLOT.width + 2;
+    const right = left + SLOT.width - 4;
+    const cx = (left + right) / 2;
+    const rgb = hexToRgb(flag.color);
+    ctx.save();
+
+    // 洞口整块发光：目标洞要一眼就能认出来，不能只靠一个小箭头。
+    const fill = ctx.createLinearGradient(0, SLOT.top, 0, SLOT.floor);
+    fill.addColorStop(0, `rgba(${rgb}, ${0.62 * flag.pulse})`);
+    fill.addColorStop(0.55, `rgba(${rgb}, ${0.22 * flag.pulse})`);
+    fill.addColorStop(1, `rgba(${rgb}, 0)`);
+    ctx.fillStyle = fill;
+    ctx.fillRect(left, SLOT.top, right - left, SLOT.floor - SLOT.top - 6);
+
+    // 台面是浅色纸，纯色描边会糊掉，加一层暗影才立得住。
+    ctx.shadowColor = `rgba(${rgb}, 0.85)`;
+    ctx.shadowBlur = 8;
+    ctx.strokeStyle = `rgba(${rgb}, ${0.8 + 0.2 * flag.pulse})`;
+    ctx.lineWidth = 2.6;
+    ctx.beginPath();
+    ctx.moveTo(left, SLOT.top + 1);
+    ctx.lineTo(right, SLOT.top + 1);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    if (flag.kind === "avoid") {
+      ctx.strokeStyle = `rgba(${rgb}, ${0.65 + 0.3 * flag.pulse})`;
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(left + 4, SLOT.top + 10);
+      ctx.lineTo(right - 4, SLOT.top + 10);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(left + 4, SLOT.top + 15);
+      ctx.lineTo(right - 4, SLOT.top + 15);
+      ctx.stroke();
+    } else {
+      ctx.shadowColor = `rgba(${rgb}, 0.9)`;
+      ctx.shadowBlur = 9;
+      ctx.fillStyle = `rgba(${rgb}, 0.98)`;
+      ctx.beginPath();
+      ctx.moveTo(cx, SLOT.top - 4);
+      ctx.lineTo(cx - 7.5, SLOT.top - 16);
+      ctx.lineTo(cx + 7.5, SLOT.top - 16);
+      ctx.closePath();
+      ctx.fill();
+      ctx.shadowBlur = 0;
+    }
+    ctx.restore();
+  }
+}
+
+function drawChallengeTargets(now) {
+  for (const target of challenge.targets) {
+    if (target.dead) continue;
+    const r = target.r;
+    const flash = target.flash || 0;
+    const pulse = 0.5 + 0.5 * Math.sin(now / 420 + target.x * 0.05);
+    const frac = Math.max(0.12, target.hp / target.maxHp);
+    ctx.save();
+    ctx.translate(target.x, target.y);
+
+    const glow = ctx.createRadialGradient(0, 0, r * 0.3, 0, 0, r * 2.6);
+    glow.addColorStop(0, `rgba(255, 176, 96, ${0.18 + flash * 0.45})`);
+    glow.addColorStop(1, "rgba(255, 176, 96, 0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 2.6, 0, TAU);
+    ctx.fill();
+
+    // 靶面：暖色同心环，和庄家挖的黑洞明确区分。
+    ctx.fillStyle = "rgba(40, 21, 12, 0.97)";
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, TAU);
+    ctx.fill();
+
+    ctx.strokeStyle = `rgba(221, 59, 44, 0.85)`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.62, 0, TAU);
+    ctx.stroke();
+
+    ctx.fillStyle = `rgba(246, 196, 83, ${0.9})`;
+    ctx.beginPath();
+    ctx.arc(0, 0, r * 0.24, 0, TAU);
+    ctx.fill();
+
+    // 外环就是耐久条：打掉一层，环就短一截。
+    ctx.strokeStyle = `rgba(246, 196, 83, ${0.55 + 0.3 * pulse + flash * 0.3})`;
+    ctx.lineWidth = 3;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.arc(0, 0, r - 1.5, -Math.PI / 2, -Math.PI / 2 + TAU * frac);
+    ctx.stroke();
+
+    ctx.strokeStyle = `rgba(255, 238, 208, ${0.1 + 0.08 * pulse})`;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(0, 0, r + 4.5, 0, TAU);
+    ctx.stroke();
+    ctx.restore();
+  }
+}
+
+function drawChallengePit(now) {
+  const pit = challenge.pit;
+  if (!pit) return;
+  const pulse = 0.6 + 0.4 * Math.sin(now / 260);
+  ctx.save();
+  ctx.translate(pit.x, pit.y);
+  const glow = ctx.createRadialGradient(0, 0, pit.r * 0.5, 0, 0, pit.r * 2.6);
+  glow.addColorStop(0, "rgba(10, 0, 3, 0.96)");
+  glow.addColorStop(0.55, `rgba(74, 5, 20, ${0.5 * pulse})`);
+  glow.addColorStop(1, "rgba(74, 5, 20, 0)");
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(0, 0, pit.r * 2.6, 0, TAU);
+  ctx.fill();
+
+  ctx.fillStyle = "#050103";
+  ctx.beginPath();
+  ctx.arc(0, 0, pit.r, 0, TAU);
+  ctx.fill();
+  ctx.strokeStyle = `rgba(221, 59, 44, ${0.5 + 0.35 * pulse})`;
+  ctx.lineWidth = 2.4;
+  ctx.beginPath();
+  ctx.arc(0, 0, pit.r, 0, TAU);
+  ctx.stroke();
+
+  for (let i = 0; i < 12; i += 1) {
+    const angle = (i / 12) * TAU + now / 2400;
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(angle) * (pit.r + 3), Math.sin(angle) * (pit.r + 3));
+    ctx.lineTo(Math.cos(angle) * (pit.r + 8), Math.sin(angle) * (pit.r + 8));
+    ctx.strokeStyle = "rgba(231, 181, 102, 0.45)";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawDealerPointer(now) {
+  const pointer = challenge.pointer;
+  if (!pointer) return;
+  const t = clamp((now - pointer.start) / pointer.flight, 0, 1);
+  const eased = easeOutCubic(t);
+  const x = lerp(pointer.fromX, pointer.x, eased);
+  const y = lerp(pointer.fromY, pointer.y, eased);
+  const settle = clamp((now - pointer.start - pointer.flight) / 220, 0, 1);
+  const pulse = 0.5 + 0.5 * Math.sin(now / 180);
+
+  ctx.save();
+  if (settle > 0) {
+    ctx.beginPath();
+    ctx.arc(pointer.x, pointer.y, 15 + (1 - settle) * 34, 0, TAU);
+    ctx.strokeStyle = `rgba(231, 181, 102, ${0.5 * settle})`;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
+  if (t < 1) {
+    ctx.beginPath();
+    ctx.moveTo(lerp(pointer.fromX, x, 0.68), lerp(pointer.fromY, y, 0.68));
+    ctx.lineTo(x, y);
+    ctx.strokeStyle = `rgba(231, 181, 102, ${0.28 * (1 - t)})`;
+    ctx.lineWidth = 3;
+    ctx.stroke();
+  }
+  ctx.beginPath();
+  ctx.arc(x, y, 9, 0, TAU);
+  ctx.fillStyle = "#e8c27c";
+  ctx.fill();
+  ctx.strokeStyle = "rgba(36, 23, 8, 0.75)";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = "#241708";
+  ctx.font = "800 9px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("七", x, y + 0.5);
+  ctx.beginPath();
+  ctx.arc(x, y, 9 + pulse * 5, 0, TAU);
+  ctx.strokeStyle = `rgba(231, 181, 102, ${0.45 - pulse * 0.25})`;
+  ctx.lineWidth = 1.4;
+  ctx.stroke();
+  ctx.restore();
+}
+
+/* ── 认输：规则不变，只重新摆牌 ─────────────────────────── */
+
+function surrenderChallenge() {
+  if (!challenge.active || challenge.ending) return;
+  if (game.phase === "flying" || game.phase === "starting" || game.phase === "returning") {
+    toast("这一球落定后再换牌");
+    return;
+  }
+  const level = challenge.level;
+  challenge.seed = makeSeed();
+  challenge.cheats = 0;
+  challenge.pit = null;
+  setupChallengeBoard();
+  game.toolAvailable = { ...challenge.quota };
+  game.toolPlaced = { magnet: 0, pad: 0, hammer: 0 };
+  game.placingTool = null;
+  updateChallengeHud();
+  updateToolTrayUI();
+  dealerSay("surrender");
+  pointAtFirstTarget();
+  beginChallengeBall();
+}
+
 function draw(now) {
   ctx.setTransform(canvasScale, 0, 0, canvasScale, 0, 0);
   ctx.clearRect(0, 0, W, H);
@@ -4510,7 +5707,7 @@ function draw(now) {
     drawCyberLaunchLane(ctx, now, game, activeTable, "dynamic");
     drawCyberFocusGlow(ctx, now, game, activeTable);
   } else {
-    drawSlotHighlights(now);
+    if (game.mode !== "challenge") drawSlotHighlights(now);
     drawPegGlows();
     drawTools(now);
     drawObstacles(ctx, obstacles, now, activeTable.palette, { clipMainField: true });
@@ -4518,6 +5715,7 @@ function draw(now) {
     drawGate(now);
     drawFocusGlow(now);
   }
+  if (game.mode === "challenge") drawChallengeBoard(now);
   // Suspense sits above the board fixtures but below the marble, so the stage
   // can dim while the ball and its key light stay bright.
   drawSuspenseOverlay(now);
@@ -4693,6 +5891,9 @@ function update(now, dt) {
   }
 
   // Decay all decorative state
+  if (game.mode === "challenge") {
+    for (const target of challenge.targets) target.flash *= Math.pow(0.012, dt);
+  }
   for (const peg of pegs) peg.glow *= Math.pow(0.02, dt);
   for (const pad of activePads) pad.glow *= Math.pow(0.015, dt);
   for (const magnet of activeMagnets) magnet.pulse *= Math.pow(0.01, dt);
@@ -5055,6 +6256,17 @@ toolSkipBtn.addEventListener("click", () => {
   clearToolPlacement(true);
 });
 
+hammerToolBtn.addEventListener("click", () => {
+  audio.init();
+  armTool("hammer");
+});
+
+surrenderBtn.addEventListener("click", () => {
+  audio.init();
+  audio.click();
+  surrenderChallenge();
+});
+
 workshopClose.addEventListener("click", closeWorkshop);
 workshopDialog.addEventListener("click", (event) => {
   if (event.target === workshopDialog) closeWorkshop();
@@ -5081,6 +6293,18 @@ cashOutBtn.addEventListener("click", () => {
 homeBtn.addEventListener("click", () => {
   audio.init();
   audio.click();
+  if (game.mode === "challenge") {
+    if (challenge.cardOpen) {
+      leaveChallenge();
+      return;
+    }
+    if (game.phase !== "idle") {
+      toast("这一球结束后可以回关卡表");
+      return;
+    }
+    leaveChallenge();
+    return;
+  }
   if (game.phase !== "idle") {
     toast("本球结束后可返回主界面，进度会保留");
     return;
@@ -5404,6 +6628,19 @@ function debugWheel(kind = null) {
   return true;
 }
 
+/** QA helper: advance the simulation without waiting for rAF. */
+let debugClock = 0;
+function debugStep(frames = 1, ms = 16.7) {
+  const dt = Math.min(0.033, ms / 1000);
+  if (debugClock < performance.now()) debugClock = performance.now();
+  for (let i = 0; i < frames; i += 1) {
+    debugClock += ms;
+    update(debugClock, dt);
+    draw(debugClock);
+  }
+  return game.phase;
+}
+
 /** QA helper: switch tables without going through the shop. */
 function debugTable(id) {
   if (!getTable(id) || getTable(id).id !== id) return false;
@@ -5412,6 +6649,42 @@ function debugTable(id) {
   applyTable(id);
   return activeTable.id === id;
 }
+
+const challengeApi = {
+  start: (levelId, options) => startChallengeLevel(levelId, options),
+  leave: () => leaveChallenge(),
+  surrender: () => surrenderChallenge(),
+  get active() {
+    return challenge.active;
+  },
+  get level() {
+    return challenge.level ? challenge.level.id : null;
+  },
+  get seed() {
+    return challenge.seed;
+  },
+  get balls() {
+    return challenge.ballsLeft;
+  },
+  get cheats() {
+    return challenge.cheats;
+  },
+  get pit() {
+    return challenge.pit ? { x: challenge.pit.x, y: challenge.pit.y, r: challenge.pit.r } : null;
+  },
+  get targets() {
+    return challenge.targets.map((target) => ({
+      id: target.id,
+      x: target.x,
+      y: target.y,
+      hp: target.hp,
+      dead: target.dead,
+    }));
+  },
+  get pegs() {
+    return pegs.map((peg) => ({ id: peg.id, x: Math.round(peg.x), y: Math.round(peg.y) }));
+  },
+};
 
 window.__MARBLE_DROP__ = {
   snapshot,
@@ -5422,6 +6695,8 @@ window.__MARBLE_DROP__ = {
   landing: debugLanding,
   wheel: debugWheel,
   table: debugTable,
+  step: debugStep,
+  challenge: challengeApi,
   get tables() {
     return TABLE_LIST.map((table) => table.id);
   },
@@ -5446,6 +6721,11 @@ function initUI() {
   setPlayStatus("等待投珠", "选择投入后开始", false);
   // Keep idle play dock hidden, but its markup shows the intended state for QA.
   dockPlay.hidden = true;
+  challengeHud.hidden = true;
+  dealerBar.hidden = true;
+  levelCard.hidden = true;
+  surrenderBtn.hidden = true;
+  document.body.dataset.mode = "";
   fitMachine();
   requestAnimationFrame(fitMachine);
   if (!staticLayer) rebuildStaticLayer();
