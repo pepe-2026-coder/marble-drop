@@ -66,6 +66,14 @@ export const LOADOUT_SLOTS = 2;
  * `required` / `optional` / `avoid` 是规则，认输不换。
  * `interference` / `destroyCount` 是牌面规模，具体位置由种子决定。
  */
+/**
+ * 数值依据：用引擎自带的真实物理模拟 1200 次落球（power 0.7，3 个种子平均），
+ * 单个洞的单球命中率大约 2.5%–15%。所以：
+ *   - 必选目标一律用「洞区」而不是单洞，每球综合命中率 17%–37%；
+ *   - 球数 5–6 球，第一关起就有余量；
+ *   - 禁区只让这一球作废，不直接判负——踩禁区本身已经消耗一颗球了。
+ * 摧毁类目标 hp=1，一撞即碎；BOSS 的筹码 hp=2，要撞两次。
+ */
 export const LEVELS = [
   {
     id: "oak-01",
@@ -74,12 +82,12 @@ export const LEVELS = [
     kicker: "THE FIRST LESSON",
     template: "precision",
     scene: "classic",
-    balls: 3,
+    balls: 5,
     interference: 2,
     destroyCount: 0,
     tools: ["magnet", "pad"],
-    required: [{ id: "r1", type: "hole", slots: [3] }],
-    optional: [{ id: "o1", type: "hole", slots: [9] }],
+    required: [{ id: "r1", type: "hole", slots: [3, 4, 5] }],
+    optional: [{ id: "o1", type: "hole", slots: [9, 10, 11] }],
     avoid: [],
     quota: { magnet: 2, pad: 1, hammer: 0 },
     dealer: "guide",
@@ -91,15 +99,15 @@ export const LEVELS = [
     kicker: "TWO LANDINGS",
     template: "precision",
     scene: "classic",
-    balls: 3,
+    balls: 6,
     interference: 3,
     destroyCount: 0,
     tools: ["magnet", "pad"],
     required: [
-      { id: "r1", type: "hole", slots: [2] },
-      { id: "r2", type: "hole", slots: [8] },
+      { id: "r1", type: "hole", slots: [2, 3, 4] },
+      { id: "r2", type: "hole", slots: [8, 9, 10] },
     ],
-    optional: [{ id: "o1", type: "hole", slots: [5] }],
+    optional: [{ id: "o1", type: "hole", slots: [6] }],
     avoid: [],
     quota: { magnet: 2, pad: 1, hammer: 0 },
     dealer: "guide",
@@ -111,15 +119,16 @@ export const LEVELS = [
     kicker: "BREAK & DROP",
     template: "destroy",
     scene: "classic",
-    balls: 3,
+    balls: 5,
     interference: 3,
     destroyCount: 2,
+    targetHp: 1,
     tools: ["magnet", "pad", "hammer"],
     required: [
       { id: "r1", type: "destroy", targets: ["t0", "t1"] },
-      { id: "r2", type: "hole", slots: [6] },
+      { id: "r2", type: "hole", slots: [6, 7, 8] },
     ],
-    optional: [{ id: "o1", type: "hole", slots: [0] }],
+    optional: [{ id: "o1", type: "hole", slots: [1, 2] }],
     avoid: [],
     quota: { magnet: 2, pad: 1, hammer: 1 },
     dealer: "press",
@@ -131,16 +140,13 @@ export const LEVELS = [
     kicker: "CORNER BUSINESS",
     template: "precision",
     scene: "classic",
-    balls: 3,
+    balls: 6,
     interference: 4,
     destroyCount: 0,
     tools: ["magnet", "pad", "hammer"],
-    required: [
-      { id: "r1", type: "hole", slots: [1] },
-      { id: "r2", type: "hole", slots: [10] },
-    ],
-    optional: [{ id: "o1", type: "hole", slots: [6] }],
-    avoid: [{ id: "a1", type: "avoid", slots: [5, 6] }],
+    required: [{ id: "r1", type: "hole", slots: [1, 2, 3, 4] }],
+    optional: [{ id: "o1", type: "hole", slots: [6, 7] }],
+    avoid: [{ id: "a1", type: "avoid", slots: [9, 10] }],
     quota: { magnet: 2, pad: 1, hammer: 1 },
     dealer: "press",
   },
@@ -151,15 +157,16 @@ export const LEVELS = [
     kicker: "THREE CHIPS",
     template: "destroy",
     scene: "classic",
-    balls: 4,
+    balls: 6,
     interference: 4,
     destroyCount: 3,
+    targetHp: 1,
     tools: ["magnet", "pad", "hammer"],
     required: [
       { id: "r1", type: "destroy", targets: ["t0", "t1", "t2"] },
-      { id: "r2", type: "hole", slots: [8] },
+      { id: "r2", type: "hole", slots: [7, 8, 9] },
     ],
-    optional: [{ id: "o1", type: "hole", slots: [2] }],
+    optional: [{ id: "o1", type: "hole", slots: [1, 2] }],
     avoid: [{ id: "a1", type: "avoid", slots: [3] }],
     quota: { magnet: 2, pad: 1, hammer: 1 },
     dealer: "mad",
@@ -171,15 +178,16 @@ export const LEVELS = [
     kicker: "THE HOUSE PLAYS",
     template: "boss",
     scene: "classic",
-    balls: 4,
+    balls: 6,
     interference: 3,
     destroyCount: 2,
+    targetHp: 2,
     tools: ["magnet", "pad", "hammer"],
     required: [
       { id: "r1", type: "destroy", targets: ["t0", "t1"] },
-      { id: "r2", type: "hole", slots: [7] },
+      { id: "r2", type: "hole", slots: [6, 7, 8] },
     ],
-    optional: [{ id: "o1", type: "hole", slots: [4] }],
+    optional: [{ id: "o1", type: "hole", slots: [4, 5] }],
     avoid: [{ id: "a1", type: "avoid", slots: [0, 11] }],
     quota: { magnet: 2, pad: 1, hammer: 1 },
     dealer: "mad",
@@ -257,8 +265,8 @@ export function buildBoard(spec, seed, tablePegs = []) {
       x: Math.round(x),
       y: Math.round(y),
       r: 17,
-      hp: 2,
-      maxHp: 2,
+      hp: Math.max(1, spec.targetHp || 1),
+      maxHp: Math.max(1, spec.targetHp || 1),
       hit: 0,
       flash: 0,
       dead: false,
@@ -274,26 +282,40 @@ export function createObjectiveState() {
   return { holes: new Set(), destroyed: new Set(), violated: null };
 }
 
-/** 母球落入某个洞。返回是否踩中禁区。 */
+/** 母球落入某个洞。踩中禁区只作废这一球，不直接判负。 */
 export function applyLanding(state, slot, spec) {
   const avoid = spec.avoid || [];
   for (const rule of avoid) {
     if (rule.slots.includes(slot)) {
       state.violated = rule;
-      return { failed: true, rule };
+      return { voided: true, rule };
     }
   }
   state.holes.add(slot);
-  return { failed: false };
+  return { voided: false };
 }
 
 export function applyDestroy(state, targetId) {
   state.destroyed.add(targetId);
 }
 
+/** 连续的洞位压成「4–6 号洞」，不连续的列出来。 */
+export function formatSlots(slots) {
+  const sorted = [...slots].sort((a, b) => a - b);
+  if (!sorted.length) return "";
+  let consecutive = true;
+  for (let i = 1; i < sorted.length; i += 1) {
+    if (sorted[i] !== sorted[i - 1] + 1) consecutive = false;
+  }
+  if (sorted.length > 1 && consecutive) {
+    return `${sorted[0] + 1}–${sorted[sorted.length - 1] + 1} 号洞`;
+  }
+  return sorted.map(slotLabel).join("、");
+}
+
 function isDone(objective, state) {
   if (objective.type === "hole") {
-    return objective.slots.every((slot) => state.holes.has(slot));
+    return objective.slots.some((slot) => state.holes.has(slot));
   }
   if (objective.type === "destroy") {
     return objective.targets.every((id) => state.destroyed.has(id));
@@ -301,13 +323,15 @@ function isDone(objective, state) {
   return false;
 }
 
-function describe(objective) {
+function describe(objective, state = null) {
   if (objective.type === "hole") {
-    const names = objective.slots.map(slotLabel).join("、");
-    return objective.slots.length > 1 ? `落入 ${names}` : `落入 ${names}`;
+    return `落入 ${formatSlots(objective.slots)}`;
   }
   if (objective.type === "destroy") {
-    return `摧毁 ${objective.targets.length} 个目标`;
+    const total = objective.targets.length;
+    if (!state) return `摧毁 ${total} 个目标`;
+    const done = objective.targets.filter((id) => state.destroyed.has(id)).length;
+    return `摧毁 ${total} 个目标 · ${done}/${total}`;
   }
   return "未知目标";
 }
@@ -316,19 +340,19 @@ function describe(objective) {
 export function objectiveList(spec, state) {
   const required = (spec.required || []).map((objective) => ({
     id: objective.id,
-    label: describe(objective),
+    label: describe(objective, state),
     done: isDone(objective, state),
     optional: false,
   }));
   const optional = (spec.optional || []).map((objective) => ({
     id: objective.id,
-    label: describe(objective),
+    label: describe(objective, state),
     done: isDone(objective, state),
     optional: true,
   }));
   const avoid = (spec.avoid || []).map((rule) => ({
     id: rule.id,
-    label: `避开 ${rule.slots.map(slotLabel).join("、")}`,
+    label: `避开 ${formatSlots(rule.slots)}`,
     done: false,
     guard: true,
   }));
@@ -362,3 +386,19 @@ export function starCount(spec, state, { cleared, ballsUsed }) {
 export function initialQuota(spec) {
   return { ...spec.quota };
 }
+
+/* 关卡数据自检：目标洞落在禁区里会让这一关无解，改了数值必须能立刻发现。 */
+function selfCheckLevels() {
+  for (const level of LEVELS) {
+    const avoid = new Set((level.avoid || []).flatMap((rule) => rule.slots || []));
+    for (const rule of [...(level.required || []), ...(level.optional || [])]) {
+      if (rule.type !== "hole") continue;
+      const clash = rule.slots.filter((slot) => avoid.has(slot));
+      if (clash.length) {
+        console.warn(`[levels] ${level.id} 的目标洞与禁区重叠`, clash);
+      }
+    }
+  }
+}
+
+selfCheckLevels();

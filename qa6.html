@@ -1,0 +1,31 @@
+<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;height:100%;background:#111}body{display:flex;align-items:center;justify-content:center}iframe{border:0;width:390px;height:844px}#out{position:fixed;left:0;bottom:0;background:#000;color:#6f6;font:11px monospace;z-index:9;margin:0;padding:6px;max-height:55%;overflow:auto}</style></head><body><iframe id="f" src="./index.html"></iframe><pre id="out"></pre>
+<script type="module">
+const log=[];const out=(k,v)=>{log.push(k+": "+JSON.stringify(v));document.getElementById("out").textContent=log.join("\n");};
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const f=document.getElementById("f");
+f.addEventListener("load",async()=>{
+ const w=f.contentWindow,d=f.contentDocument;
+ const api=()=>w.__MARBLE_DROP__;
+ try{
+   await wait(400);
+   d.body.dataset.mode="challenge";
+   w.__MARBLE_APP__.showScreen("game");
+   await wait(200);
+   const levels=["oak-01","oak-02","oak-04"];
+   for(const id of levels){
+     const total=Array(12).fill(0);let miss=0;
+     for(const seed of [11,222,3333]){
+       api().challenge.start(id,{seed});
+       await wait(60);
+       const r=api().simulate(400,0.7);
+       r.bins.forEach((v,i)=>{total[i]+=v;});
+       miss+=r.misses;
+     }
+     const n=total.reduce((a,b)=>a+b,0)+miss;
+     out(id,{hit:total.map(v=>+(100*v/n).toFixed(1)),miss:+(100*miss/n).toFixed(1)});
+     await wait(30);
+   }
+ }catch(e){out("THROWN",String(e&&e.stack||e));}
+ out("done",true);
+});
+</script></body></html>

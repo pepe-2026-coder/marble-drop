@@ -1889,7 +1889,7 @@ function defaultLoadout(level) {
 
 function firstTargetLabel(level) {
   const list = objectiveList(level, createObjectiveState());
-  return list.required[0]?.label || "目标";
+  return (list.required[0]?.label || "目标").split(" · ")[0];
 }
 
 /* ── 开局 ───────────────────────────────────────────────── */
@@ -2054,7 +2054,7 @@ function renderCardObjectives(level, state) {
         `<li class="is-optional ${item.done ? "is-done" : ""}"><span>${item.label}</span><span class="rule-tag">奖励</span></li>`,
     ),
     ...list.avoid.map(
-      (item) => `<li class="is-guard"><span>${item.label}</span><span class="rule-tag">禁区</span></li>`,
+      (item) => `<li class="is-guard"><span>${item.label}</span><span class="rule-tag">本球作废</span></li>`,
     ),
   ];
   levelCardObjectives.innerHTML = rows.join("");
@@ -2131,7 +2131,7 @@ function showLevelIntro(level) {
   levelCard.hidden = false;
   levelCard.classList.remove("is-clear", "is-fail");
   levelCard.classList.add("is-visible");
-  levelCardKicker.textContent = `LEVEL ${String(challenge.index + 1).padStart(2, "0")} · ${level.kicker}`;
+  levelCardKicker.textContent = `LEVEL ${String(challenge.index + 1).padStart(2, "0")} · ${level.balls} 球 · ${level.kicker}`;
   levelCardTitle.textContent = level.name;
   levelCardSub.textContent = pickLine(challenge.stage, "intro", {
     target: firstTargetLabel(level),
@@ -2327,17 +2327,22 @@ function resolveChallengeLanding() {
   challenge.ballsLeft = Math.max(0, challenge.ballsLeft - 1);
 
   const result = applyLanding(challenge.objectives, index, challenge.level);
-  spawnSlotBurst(ball.x, 982, !result.failed);
+  spawnSlotBurst(ball.x, 982, !result.voided);
   updateChallengeHud();
 
-  if (result.failed) {
+  // 禁区只作废这一球：它已经吃掉一颗球了，再直接判负就太狠。
+  if (result.voided) {
     audio.crowd("gasp");
     audio.lose();
-    vibrate([18, 40, 25]);
-    setRoundBadge("live", `踩到禁区 · ${slotLabel(index)}`);
-    setPlayStatus(`母球落进了${slotLabel(index)}`, "这是庄家划掉的洞", false);
-    dealerSay("fail");
-    schedule(() => finishChallengeLevel(false), 1300);
+    vibrate(20);
+    setRoundBadge("live", `禁区 · ${slotLabel(index)}`);
+    setPlayStatus(`落进禁区 ${slotLabel(index)}`, "这一球作废", false);
+    dealerSay("void");
+    if (challenge.ballsLeft <= 0) {
+      schedule(() => finishChallengeLevel(false), 1200);
+    } else {
+      schedule(() => challengeReturnBall(), 1100);
+    }
     return;
   }
 
@@ -2656,6 +2661,7 @@ function collideChallengeTargets(b) {
 
 function hitChallengeTarget(target, body) {
   if (target.dead) return;
+  challenge.debugHits = (challenge.debugHits || 0) + 1;
   target.hp -= 1;
   target.flash = 1;
   target.hit += 1;
@@ -6896,6 +6902,21 @@ const challengeApi = {
   },
   get pit() {
     return challenge.pit ? { x: challenge.pit.x, y: challenge.pit.y, r: challenge.pit.r } : null;
+  },
+  get debugHits() {
+    return challenge.debugHits || 0;
+  },
+  resetDebug() {
+    challenge.debugHits = 0;
+  },
+  reviveTargets() {
+    for (const target of challenge.targets) {
+      target.dead = false;
+      target.hp = target.maxHp;
+      target.hit = 0;
+      target.flash = 0;
+    }
+    challenge.objectives.destroyed.clear();
   },
   get targets() {
     return challenge.targets.map((target) => ({
