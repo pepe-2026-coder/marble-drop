@@ -39,13 +39,13 @@ export const TOOL_DEFS = {
     id: "magnet",
     name: "磁场",
     symbol: "◎",
-    brief: "钉在钉子上，把路过的母球吸过去",
+    brief: "放在台面任意位置，把路过的母球吸过去",
   },
   pad: {
     id: "pad",
     name: "挡板",
     symbol: "◉",
-    brief: "放进钉阵，把母球弹向另一侧",
+    brief: "按住拉一条任意角度的挡板，把球引向你要的方向",
   },
   hammer: {
     id: "hammer",

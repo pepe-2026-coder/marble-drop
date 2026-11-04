@@ -212,8 +212,11 @@
                 <p class="level-card-sub" id="levelCardSub"></p>
                 <ul class="level-card-objectives" id="levelCardObjectives"></ul>
                 <div class="loadout-pick" id="loadoutPick" hidden>
-                  <span class="loadout-title">带两件 · <b id="loadoutCount">0</b>/2</span>
-                  <div class="loadout-row" id="loadoutRow"></div>
+                  <div class="loadout-summary">
+                    <span class="loadout-title">携带</span>
+                    <span class="loadout-selected" id="loadoutSelected">未选择</span>
+                    <button class="loadout-open" id="bagOpenBtn" type="button">打开背包</button>
+                  </div>
                 </div>
                 <div class="level-card-stars" id="levelCardStars" hidden></div>
                 <div class="level-card-actions" id="levelCardActions"></div>
@@ -592,6 +595,22 @@
     </dialog>
 
     <!-- ── 玩法说明 ─────────────────────────────────────────── -->
+    <!-- 闯关道具背包 -->
+    <dialog class="bag-dialog" id="bagDialog">
+      <div class="dialog-head">
+        <div>
+          <span class="dialog-kicker">LOADOUT</span>
+          <h2>背包</h2>
+        </div>
+        <button class="dialog-close" id="bagClose" type="button" aria-label="关闭背包">×</button>
+      </div>
+      <p class="bag-note" id="bagNote">每关最多带 2 件。配额在整关内共用，用掉就没有了。</p>
+      <ul class="bag-list" id="bagList"></ul>
+      <div class="bag-actions">
+        <button class="primary-btn" id="bagDone" type="button">确定</button>
+      </div>
+    </dialog>
+
     <dialog class="help-dialog" id="helpDialog">
       <div class="dialog-head">
         <div>

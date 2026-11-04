@@ -165,8 +165,12 @@ const levelCardTitle = document.getElementById("levelCardTitle");
 const levelCardSub = document.getElementById("levelCardSub");
 const levelCardObjectives = document.getElementById("levelCardObjectives");
 const loadoutPick = document.getElementById("loadoutPick");
-const loadoutCount = document.getElementById("loadoutCount");
-const loadoutRow = document.getElementById("loadoutRow");
+const loadoutSelected = document.getElementById("loadoutSelected");
+const bagOpenBtn = document.getElementById("bagOpenBtn");
+const bagDialog = document.getElementById("bagDialog");
+const bagList = document.getElementById("bagList");
+const bagClose = document.getElementById("bagClose");
+const bagDone = document.getElementById("bagDone");
 const levelCardStars = document.getElementById("levelCardStars");
 const levelCardActions = document.getElementById("levelCardActions");
 
@@ -323,9 +327,18 @@ function getMagnetConfig() {
 function getToolConfig(type) {
   if (game.mode === "challenge") {
     if (type === "magnet") return { radius: 84, strength: 1.0, duration: 999 };
-    return { radius: 30, restitution: 0.98 };
+    // 挡板是一段有厚度的线：thickness 是半宽，长度由玩家拉出来。
+    return { thickness: 6.5, restitution: 0.92, minLength: 70, maxLength: 240 };
   }
   return type === "magnet" ? getMagnetConfig() : getPadConfig();
+}
+
+/** 挡板端点必须落在台面内，越界就贴着边界走。 */
+function clampPadPoint(point) {
+  return {
+    x: clamp(point.x, 98, 566),
+    y: clamp(point.y, 318, 892),
+  };
 }
 
 function getPadConfig() {
@@ -380,6 +393,8 @@ const game = {
   landingResolved: false,
   placingTool: null,
   mode: "arcade", // arcade | challenge
+  padDraft: null,
+  hoverPoint: null,
   toolAvailable: { magnet: 0, pad: 0, hammer: 0 },
   toolBaseCharges: { magnet: 0, pad: 0, hammer: 0 },
   toolPlaced: { magnet: 0, pad: 0, hammer: 0 },
@@ -732,35 +747,61 @@ function collidePeg(b, peg) {
   return true;
 }
 
+/**
+ * 挡板是一段胶囊：先求母球到线段的最近点，再按这个点做圆碰撞。
+ * 两个端点都用 round cap，所以贴着端点擦过去也不会漏判。
+ */
 function collidePad(b, pad) {
-  const dx = b.x - pad.x;
-  const dy = b.y - pad.y;
-  const minDist = b.r + pad.radius;
+  const sx = pad.x2 - pad.x1;
+  const sy = pad.y2 - pad.y1;
+  const len2 = sx * sx + sy * sy || 1;
+  let t = ((b.x - pad.x1) * sx + (b.y - pad.y1) * sy) / len2;
+  t = clamp(t, 0, 1);
+  const cx = pad.x1 + sx * t;
+  const cy = pad.y1 + sy * t;
+
+  const dx = b.x - cx;
+  const dy = b.y - cy;
+  const minDist = b.r + pad.thickness;
   const dist2 = dx * dx + dy * dy;
   if (dist2 >= minDist * minDist) return false;
 
-  const dist = Math.sqrt(dist2) || 0.0001;
-  const nx = dx / dist;
-  const ny = dy / dist;
-  b.x += nx * (minDist - dist);
-  b.y += ny * (minDist - dist);
+  const dist = Math.sqrt(dist2);
+  let nx;
+  let ny;
+  if (dist < 0.0001) {
+    // 正好压在线段上：用法线兜底，避免除零产生 NaN。
+    const len = Math.sqrt(len2);
+    nx = -sy / len;
+    ny = sx / len;
+    if (b.vx * nx + b.vy * ny > 0) {
+      nx = -nx;
+      ny = -ny;
+    }
+  } else {
+    nx = dx / dist;
+    ny = dy / dist;
+  }
+  b.x = cx + nx * minDist;
+  b.y = cy + ny * minDist;
 
   const vn = b.vx * nx + b.vy * ny;
   if (vn < 0) {
     b.vx -= (1 + pad.restitution) * vn * nx;
     b.vy -= (1 + pad.restitution) * vn * ny;
+    // 一点点切向摩擦，让球贴着挡板滑而不是弹飞。
     const tx = -ny;
     const ty = nx;
     const vt = b.vx * tx + b.vy * ty;
-    b.vx -= vt * 0.025 * tx;
-    b.vy -= vt * 0.025 * ty;
+    b.vx -= vt * 0.035 * tx;
+    b.vy -= vt * 0.035 * ty;
 
     if (!b.silent && game.phase === "flying") {
       pad.hits += 1;
       pad.glow = 1;
       if (pad.hits <= 5) game.toolScore += 3;
       const energy = Math.min(1.5, Math.abs(vn) / 700);
-      spawnToolBurst(pad.x, pad.y, "#e7b566");
+      spawnToolBurst(cx, cy, "#e7b566");
       if (Math.random() < 0.7) audio.peg(energy);
       game.shake = Math.min(1.2, game.shake + 0.08);
     }
@@ -1438,6 +1479,8 @@ function prepareToolRound() {
     game.toolPlaced = { magnet: 0, pad: 0, hammer: 0 };
     game.toolScore = 0;
     game.placingTool = null;
+    game.padDraft = null;
+    game.hoverPoint = null;
     activeMagnets.length = 0;
     activePads.length = 0;
     return;
@@ -1481,7 +1524,11 @@ function updateToolTrayUI() {
     button.setAttribute("aria-pressed", String(game.placingTool === type));
   }
   toolTray.classList.toggle("is-placing", Boolean(game.placingTool));
-  canvas.classList.toggle("is-placing", Boolean(game.placingTool));
+  canvas.classList.toggle("is-placing", Boolean(game.placingTool) || Boolean(game.padDraft));
+  if (!game.placingTool) {
+    game.padDraft = null;
+    game.hoverPoint = null;
+  }
   surrenderBtn.hidden = !(game.mode === "challenge" && challenge.active && !challenge.ending);
   if (!ready) game.placingTool = null;
 }
@@ -1511,6 +1558,8 @@ function armTool(type) {
 
 function clearToolPlacement(withHint = true) {
   game.placingTool = null;
+  game.padDraft = null;
+  game.hoverPoint = null;
   updateToolTrayUI();
   setPlayStatus("拉下弹簧，松手发射", "弱力擦顶，强力更远", true);
   if (withHint) showHint("弱力刚好越过通道顶部，强力送得更远", 3200);
@@ -1640,31 +1689,102 @@ function handleObstacleEvents(events) {
   }
 }
 
+/* ── 挡板：按住拖一条线，松手放下 ────────────────────────── */
+
+function beginPadDraft(point, pointerId) {
+  if (game.phase !== "ready") return false;
+  if (game.toolAvailable.pad <= 0) return false;
+  const start = clampPadPoint(point);
+  game.padDraft = { x1: start.x, y1: start.y, x2: start.x + 1, y2: start.y, pointerId };
+  game.pointerId = pointerId;
+  // 合成指针（自动化测试）没有真实 pointer，捕获会抛错；真实触摸不受影响。
+  try {
+    canvas.setPointerCapture?.(pointerId);
+  } catch {
+    /* ignore */
+  }
+  setPlayStatus("拖动调整角度，松手放下挡板", "越界会自动贴边", true);
+  audio.click();
+  return true;
+}
+
+function updatePadDraft(point) {
+  const draft = game.padDraft;
+  if (!draft) return;
+  const p = clampPadPoint(point);
+  const dx = p.x - draft.x1;
+  const dy = p.y - draft.y1;
+  const len = Math.hypot(dx, dy);
+  const max = getToolConfig("pad").maxLength;
+  if (len > max && len > 0) {
+    draft.x2 = draft.x1 + (dx / len) * max;
+    draft.y2 = draft.y1 + (dy / len) * max;
+  } else {
+    draft.x2 = p.x;
+    draft.y2 = p.y;
+  }
+}
+
+function cancelPadDraft() {
+  game.padDraft = null;
+  game.pointerId = null;
+}
+
+function commitPadDraft() {
+  const draft = game.padDraft;
+  if (!draft) return false;
+  game.padDraft = null;
+  game.pointerId = null;
+  const config = getToolConfig("pad");
+  const len = Math.hypot(draft.x2 - draft.x1, draft.y2 - draft.y1);
+  if (len < config.minLength) {
+    toast("挡板太短了，按住拖长一点再松手");
+    setPlayStatus("拖动调整角度，松手放下挡板", "至少拖出 70px", true);
+    return false;
+  }
+  activePads.push({
+    x1: draft.x1,
+    y1: draft.y1,
+    x2: draft.x2,
+    y2: draft.y2,
+    thickness: config.thickness,
+    restitution: config.restitution,
+    hits: 0,
+    glow: 0,
+  });
+  game.toolScore += 2;
+  consumeToolPlacement("pad");
+  spawnToolBurst((draft.x1 + draft.x2) / 2, (draft.y1 + draft.y2) / 2, "#e7b566");
+  audio.tone(300, 0.12, "triangle", 0.045, 520);
+  updateToolTrayUI();
+  if (game.placingTool && game.toolAvailable[game.placingTool] <= 0) {
+    game.placingTool = null;
+    updateToolTrayUI();
+  }
+  if (game.placingTool) {
+    setPlayStatus("继续拖出下一块挡板", "也可以直接拉杆发射", true);
+  } else {
+    setPlayStatus("布阵完成 · 拉下弹簧发射", "弱力擦顶，强力更远", true);
+  }
+  return true;
+}
+
 function attemptToolPlacement(point) {
   if (game.phase !== "ready" || !game.placingTool) return false;
   const type = game.placingTool;
   if (game.toolAvailable[type] <= 0) return false;
 
   if (type === "magnet") {
-    let nearest = null;
-    let bestDistance = 46;
-    for (const peg of pegs) {
-      if (activeMagnets.some((magnet) => magnet.pegId === peg.id)) continue;
-      const distance = Math.hypot(point.x - peg.x, point.y - peg.y);
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        nearest = peg;
-      }
-    }
-    if (!nearest) {
-      toast("请点击一颗钉子放置磁力钉");
+    const config = getToolConfig("magnet");
+    const spot = clampPadPoint(point);
+    if (activeMagnets.some((m) => Math.hypot(m.x - spot.x, m.y - spot.y) < 72)) {
+      toast("两个磁场不能靠得太近");
       return false;
     }
-    const config = getToolConfig("magnet");
+    // 磁场不再必须钉在钉子上：钉阵里没有钉子的空档同样可以布磁极。
     activeMagnets.push({
-      pegId: nearest.id,
-      x: nearest.x,
-      y: nearest.y,
+      x: spot.x,
+      y: spot.y,
       radius: config.radius,
       strength: config.strength,
       duration: config.duration,
@@ -1675,38 +1795,13 @@ function attemptToolPlacement(point) {
     });
     game.toolScore += 2;
     consumeToolPlacement("magnet");
-    spawnToolBurst(nearest.x, nearest.y, "#8ed0be");
+    spawnToolBurst(spot.x, spot.y, "#8ed0be");
     audio.tone(620, 0.1, "sine", 0.04, 820);
   } else if (type === "hammer") {
     return attemptHammerStrike(point);
   } else {
-    const config = getToolConfig("pad");
-    const radius = config.radius;
-    if (
-      point.x < 102 + radius ||
-      point.x > 558 - radius ||
-      point.y < 320 + radius ||
-      point.y > 890 - radius
-    ) {
-      toast("弹力板需要放在钉子阵范围内");
-      return false;
-    }
-    if (activePads.some((pad) => Math.hypot(pad.x - point.x, pad.y - point.y) < pad.radius + radius + 10)) {
-      toast("两块弹力板不能靠得太近");
-      return false;
-    }
-    activePads.push({
-      x: point.x,
-      y: point.y,
-      radius,
-      restitution: config.restitution,
-      hits: 0,
-      glow: 0,
-    });
-    game.toolScore += 2;
-    consumeToolPlacement("pad");
-    spawnToolBurst(point.x, point.y, "#e7b566");
-    audio.tone(300, 0.12, "triangle", 0.045, 520);
+    // 挡板是拖出来的，不该走到这里。
+    return false;
   }
 
   updateToolTrayUI();
@@ -1967,38 +2062,65 @@ function renderCardObjectives(level, state) {
 
 function renderLoadout() {
   const level = challenge.level;
-  const tools = level.tools.filter((id) => (level.quota[id] || 0) > 0);
-  if (tools.length <= LOADOUT_SLOTS) {
-    loadoutPick.hidden = true;
-    return;
-  }
-  loadoutPick.hidden = false;
-  loadoutCount.textContent = String(challenge.loadout.length);
-  loadoutRow.innerHTML = "";
-  for (const id of tools) {
+  if (!level) return;
+  const available = level.tools.filter((id) => (level.quota[id] || 0) > 0);
+  loadoutPick.hidden = available.length === 0;
+  const names = challenge.loadout.map((id) => TOOL_DEFS[id]?.name || id);
+  loadoutSelected.textContent = names.length ? names.join(" · ") : "空手开局";
+  loadoutSelected.classList.toggle("is-empty", names.length === 0);
+}
+
+/* ── 背包 ───────────────────────────────────────────────── */
+
+function renderBagList() {
+  const level = challenge.level;
+  if (!level) return;
+  bagList.innerHTML = "";
+  for (const id of level.tools) {
     const def = TOOL_DEFS[id];
+    const quota = level.quota[id] || 0;
+    const picked = challenge.loadout.includes(id);
+    const item = document.createElement("li");
     const button = document.createElement("button");
     button.type = "button";
-    button.className = `loadout-chip${challenge.loadout.includes(id) ? " is-picked" : ""}`;
-    button.innerHTML = `<span class="loadout-symbol">${def.symbol}</span><span>${def.name}</span><span class="loadout-quota">×${level.quota[id]}</span>`;
-    button.addEventListener("click", () => {
-      audio.click();
-      toggleLoadout(id);
-    });
-    loadoutRow.appendChild(button);
+    button.className = `bag-item${picked ? " is-picked" : ""}`;
+    button.disabled = quota <= 0;
+    button.innerHTML = `
+      <span class="bag-symbol">${def.symbol}</span>
+      <span class="bag-copy"><b>${def.name}<em>×${quota}</em></b><small>${def.brief}</small></span>
+      <span class="bag-mark">✓</span>`;
+    button.addEventListener("click", () => toggleLoadout(id));
+    item.appendChild(button);
+    bagList.appendChild(item);
   }
 }
 
 function toggleLoadout(id) {
+  audio.click();
   const index = challenge.loadout.indexOf(id);
   if (index >= 0) {
     challenge.loadout.splice(index, 1);
   } else {
-    // 选满以后点新的会顶掉最早选的那件，省得玩家还要先取消一次。
-    if (challenge.loadout.length >= LOADOUT_SLOTS) challenge.loadout.shift();
+    if (challenge.loadout.length >= LOADOUT_SLOTS) {
+      toast(`最多带 ${LOADOUT_SLOTS} 件，先取消一件`);
+      return;
+    }
     challenge.loadout.push(id);
   }
+  renderBagList();
   renderLoadout();
+}
+
+function openBag() {
+  if (!challenge.level) return;
+  renderBagList();
+  if (typeof bagDialog.showModal === "function") bagDialog.showModal();
+  else bagDialog.setAttribute("open", "");
+}
+
+function closeBag() {
+  if (typeof bagDialog.close === "function") bagDialog.close();
+  else bagDialog.removeAttribute("open");
 }
 
 /* ── 关卡卡片 ───────────────────────────────────────────── */
@@ -4097,75 +4219,12 @@ function drawPegGlows() {
 }
 
 function drawTools(now) {
-  // Bounce pads sit above the peg grid but below the marble.
+  // 挡板是一段有角度的胶囊，画成一根金属压条。
   for (const pad of activePads) {
-    const pulse = 0.72 + Math.sin(now * 0.0045 + pad.x) * 0.18;
-    ctx.save();
-    ctx.shadowColor = "rgba(57, 39, 17, 0.3)";
-    ctx.shadowBlur = 8;
-    ctx.shadowOffsetY = 3;
-    const glow = ctx.createRadialGradient(pad.x, pad.y, 1, pad.x, pad.y, pad.radius * 2.2);
-    glow.addColorStop(0, `rgba(244, 206, 121, ${0.16 + pad.glow * 0.22})`);
-    glow.addColorStop(1, "rgba(231, 181, 102, 0)");
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(pad.x, pad.y, pad.radius * 2.2, 0, TAU);
-    ctx.fill();
-    ctx.restore();
-
-    ctx.save();
-    const base = ctx.createRadialGradient(
-      pad.x - pad.radius * 0.35,
-      pad.y - pad.radius * 0.4,
-      1,
-      pad.x,
-      pad.y,
-      pad.radius,
-    );
-    base.addColorStop(0, "#f8e7bd");
-    base.addColorStop(0.42, "#d9b46d");
-    base.addColorStop(1, "#7a5c2c");
-    ctx.fillStyle = base;
-    ctx.beginPath();
-    ctx.arc(pad.x, pad.y, pad.radius, 0, TAU);
-    ctx.fill();
-    ctx.strokeStyle = "rgba(55, 42, 22, 0.66)";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-
-    ctx.strokeStyle = `rgba(255, 250, 231, ${0.35 + pad.glow * 0.5})`;
-    ctx.lineWidth = 1.1;
-    ctx.beginPath();
-    ctx.arc(pad.x, pad.y, pad.radius * 0.64, 0, TAU);
-    ctx.stroke();
-    ctx.strokeStyle = "rgba(86, 63, 26, 0.42)";
-    ctx.lineWidth = 1.2;
-    for (let i = 0; i < 4; i += 1) {
-      const angle = (i / 4) * TAU + Math.PI / 4;
-      ctx.beginPath();
-      ctx.moveTo(
-        pad.x + Math.cos(angle) * pad.radius * 0.22,
-        pad.y + Math.sin(angle) * pad.radius * 0.22,
-      );
-      ctx.lineTo(
-        pad.x + Math.cos(angle) * pad.radius * 0.84,
-        pad.y + Math.sin(angle) * pad.radius * 0.84,
-      );
-      ctx.stroke();
-    }
-    ctx.fillStyle = "#49351a";
-    ctx.beginPath();
-    ctx.arc(pad.x, pad.y, Math.max(2.2, pad.radius * 0.16), 0, TAU);
-    ctx.fill();
-    if (pad.glow > 0.08) {
-      ctx.strokeStyle = `rgba(255, 245, 207, ${pad.glow * 0.7})`;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(pad.x, pad.y, pad.radius + 4 + (1 - pad.glow) * 10, 0, TAU);
-      ctx.stroke();
-    }
-    ctx.restore();
+    drawBaffle(pad, now);
   }
+
+  if (game.padDraft) drawBaffleDraft(now);
 
   // Magnetized pegs have a visible field radius and rotating rings.
   for (const magnet of activeMagnets) {
@@ -4241,51 +4300,159 @@ function drawTools(now) {
     ctx.restore();
   }
 
-  if (game.placingTool === "magnet") {
-    const pulse = 0.55 + Math.sin(now * 0.007) * 0.35;
-    ctx.save();
-    for (const peg of pegs) {
-      if (activeMagnets.some((magnet) => magnet.pegId === peg.id)) continue;
-      ctx.strokeStyle = `rgba(123, 211, 188, ${0.25 + pulse * 0.5})`;
-      ctx.lineWidth = 1.4;
-      ctx.beginPath();
-      ctx.arc(peg.x, peg.y, 9 + pulse * 3, 0, TAU);
-      ctx.stroke();
-      ctx.fillStyle = `rgba(123, 211, 188, ${0.1 + pulse * 0.12})`;
-      ctx.beginPath();
-      ctx.arc(peg.x, peg.y, 7, 0, TAU);
-      ctx.fill();
-    }
-    ctx.restore();
-  } else if (game.placingTool === "pad") {
+  if (game.placingTool === "magnet" || game.placingTool === "pad") {
     const pulse = 0.5 + Math.sin(now * 0.005) * 0.3;
-    const config = getPadConfig();
-    const left = 102 + config.radius;
-    const right = 558 - config.radius;
-    const top = 320 + config.radius;
-    const bottom = 890 - config.radius;
     ctx.save();
     ctx.setLineDash([7, 8]);
     ctx.lineDashOffset = -now * 0.01;
-    ctx.strokeStyle = `rgba(231, 181, 102, ${0.18 + pulse * 0.18})`;
+    ctx.strokeStyle = `rgba(231, 181, 102, ${0.16 + pulse * 0.16})`;
     ctx.lineWidth = 1.4;
-    roundRect(left, top, right - left, bottom - top, 18);
+    roundRect(98, 318, 566 - 98, 892 - 318, 18);
     ctx.stroke();
     ctx.setLineDash([]);
-    ctx.strokeStyle = `rgba(231, 181, 102, ${0.14 + pulse * 0.1})`;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(left + 6, top);
-    ctx.lineTo(right - 6, top);
-    ctx.moveTo(left + 6, bottom);
-    ctx.lineTo(right - 6, bottom);
-    ctx.stroke();
+    ctx.fillStyle = `rgba(231, 181, 102, ${0.34 + pulse * 0.2})`;
+    ctx.font = "600 11px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(
+      game.placingTool === "magnet" ? "点击台面任意位置放置磁场" : "按住拖出一条线，松手放下挡板",
+      332,
+      336,
+    );
     ctx.restore();
+  }
+
+  // 鼠标悬停时给一个虚影；触屏没有 hover，靠拖拽本身预览。
+  if (game.placingTool && game.hoverPoint && game.phase === "ready") {
+    drawToolGhost(game.hoverPoint, now);
   }
 }
 
-/* Same split as the peg field: slot housing, dividers, rails and numbers
-   are baked once; only the lit pockets and the win flash animate. */
+function drawBaffle(pad, now) {
+  const dx = pad.x2 - pad.x1;
+  const dy = pad.y2 - pad.y1;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = -dy / len;
+  const ny = dx / len;
+
+  ctx.save();
+  ctx.lineCap = "round";
+
+  ctx.strokeStyle = `rgba(231, 181, 102, ${0.1 + pad.glow * 0.3})`;
+  ctx.lineWidth = pad.thickness * 2 + 14;
+  ctx.beginPath();
+  ctx.moveTo(pad.x1, pad.y1);
+  ctx.lineTo(pad.x2, pad.y2);
+  ctx.stroke();
+
+  const grad = ctx.createLinearGradient(
+    pad.x1 + nx * pad.thickness,
+    pad.y1 + ny * pad.thickness,
+    pad.x1 - nx * pad.thickness,
+    pad.y1 - ny * pad.thickness,
+  );
+  grad.addColorStop(0, "#f8e7bd");
+  grad.addColorStop(0.45, "#dcb972");
+  grad.addColorStop(1, "#7d5d2c");
+  ctx.strokeStyle = grad;
+  ctx.lineWidth = pad.thickness * 2;
+  ctx.beginPath();
+  ctx.moveTo(pad.x1, pad.y1);
+  ctx.lineTo(pad.x2, pad.y2);
+  ctx.stroke();
+
+  ctx.strokeStyle = `rgba(255, 250, 231, ${0.32 + pad.glow * 0.5})`;
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(pad.x1 + nx * 2.4, pad.y1 + ny * 2.4);
+  ctx.lineTo(pad.x2 + nx * 2.4, pad.y2 + ny * 2.4);
+  ctx.stroke();
+
+  if (pad.glow > 0.08) {
+    const mx = (pad.x1 + pad.x2) / 2;
+    const my = (pad.y1 + pad.y2) / 2;
+    ctx.strokeStyle = `rgba(255, 245, 207, ${pad.glow * 0.6})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(mx, my, pad.thickness + 6 + (1 - pad.glow) * 12, 0, TAU);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawBaffleDraft(now) {
+  const draft = game.padDraft;
+  const config = getToolConfig("pad");
+  const len = Math.hypot(draft.x2 - draft.x1, draft.y2 - draft.y1);
+  const tooShort = len < config.minLength;
+  const color = tooShort ? "rgba(221, 59, 44, 0.92)" : "rgba(231, 181, 102, 0.96)";
+  const mx = (draft.x1 + draft.x2) / 2;
+  const my = (draft.y1 + draft.y2) / 2;
+
+  ctx.save();
+  ctx.lineCap = "round";
+  ctx.setLineDash([9, 7]);
+  ctx.lineDashOffset = -now * 0.02;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = config.thickness * 2;
+  ctx.beginPath();
+  ctx.moveTo(draft.x1, draft.y1);
+  ctx.lineTo(draft.x2, draft.y2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.strokeStyle = "rgba(255, 250, 231, 0.75)";
+  ctx.lineWidth = 1.6;
+  for (const [px, py] of [[draft.x1, draft.y1], [draft.x2, draft.y2]]) {
+    ctx.beginPath();
+    ctx.arc(px, py, 9, 0, TAU);
+    ctx.stroke();
+  }
+
+  const deg = Math.round((Math.atan2(draft.y2 - draft.y1, draft.x2 - draft.x1) * 180) / Math.PI);
+  ctx.fillStyle = color;
+  ctx.font = "700 11px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(`${Math.round(len)}px · ${deg}°`, mx, my - 16);
+  ctx.restore();
+}
+
+function drawToolGhost(point, now) {
+  const pulse = 0.5 + Math.sin(now * 0.006) * 0.4;
+  ctx.save();
+  if (game.placingTool === "magnet") {
+    const config = getToolConfig("magnet");
+    ctx.strokeStyle = `rgba(123, 211, 188, ${0.25 + pulse * 0.4})`;
+    ctx.lineWidth = 1.4;
+    ctx.setLineDash([5, 6]);
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, config.radius * 0.55, 0, TAU);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = "rgba(137, 217, 195, 0.22)";
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 8.5, 0, TAU);
+    ctx.fill();
+  } else if (game.placingTool === "hammer") {
+    ctx.strokeStyle = `rgba(229, 154, 120, ${0.3 + pulse * 0.4})`;
+    ctx.lineWidth = 1.6;
+    ctx.beginPath();
+    ctx.arc(point.x, point.y, 14 + pulse * 3, 0, TAU);
+    ctx.stroke();
+  } else {
+    const config = getToolConfig("pad");
+    ctx.strokeStyle = `rgba(231, 181, 102, ${0.25 + pulse * 0.35})`;
+    ctx.lineWidth = config.thickness * 2;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(point.x - 34, point.y + 22);
+    ctx.lineTo(point.x + 34, point.y - 22);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
 function drawSlotsBase() {
   ctx.save();
 
@@ -6103,14 +6270,24 @@ canvas.addEventListener(
       const springHit = isSpringHit(point);
       if (game.placingTool && !springHit) {
         event.preventDefault();
-        attemptToolPlacement(point);
+        if (game.placingTool === "pad") {
+          beginPadDraft(point, event.pointerId);
+        } else {
+          attemptToolPlacement(point);
+        }
         return;
       }
       if (springHit) {
         event.preventDefault();
         if (game.placingTool) clearToolPlacement(false);
         game.pointerId = event.pointerId;
-        canvas.setPointerCapture?.(event.pointerId);
+        // 合成指针（自动化 / 某些浏览器合成事件）没有活动 pointer，
+        // 捕获会抛错；不能让它打断蓄力。
+        try {
+          canvas.setPointerCapture?.(event.pointerId);
+        } catch {
+          /* ignore */
+        }
         beginCharge("pointer", point.y, event.clientY);
       } else {
         toast(game.placingTool ? "请点击机台放置机关" : "先点下方机关布阵，或直接拉下弹簧");
@@ -6124,6 +6301,14 @@ canvas.addEventListener(
 canvas.addEventListener(
   "pointermove",
   (event) => {
+    if (game.mode === "challenge" && game.phase === "ready") {
+      game.hoverPoint = canvasPoint(event);
+    }
+    if (game.padDraft && game.padDraft.pointerId === event.pointerId) {
+      event.preventDefault();
+      updatePadDraft(canvasPoint(event));
+      return;
+    }
     if (game.phase !== "charging" || game.pointerId !== event.pointerId) return;
     event.preventDefault();
     updateChargeFromPointer(event.clientY);
@@ -6134,6 +6319,11 @@ canvas.addEventListener(
 canvas.addEventListener(
   "pointerup",
   (event) => {
+    if (game.padDraft && game.padDraft.pointerId === event.pointerId) {
+      event.preventDefault();
+      commitPadDraft();
+      return;
+    }
     if (game.pointerId !== event.pointerId) return;
     event.preventDefault();
     releaseCharge(false);
@@ -6142,11 +6332,19 @@ canvas.addEventListener(
 );
 
 canvas.addEventListener("pointercancel", (event) => {
+  if (game.padDraft && game.padDraft.pointerId === event.pointerId) {
+    cancelPadDraft();
+    return;
+  }
   if (game.pointerId !== event.pointerId) return;
   releaseCharge(true);
 });
 
 window.addEventListener("pointerup", (event) => {
+  if (game.padDraft && game.padDraft.pointerId === event.pointerId) {
+    commitPadDraft();
+    return;
+  }
   if (game.pointerId !== null && game.pointerId === event.pointerId) {
     releaseCharge(false);
   }
@@ -6265,6 +6463,31 @@ surrenderBtn.addEventListener("click", () => {
   audio.init();
   audio.click();
   surrenderChallenge();
+});
+
+bagOpenBtn.addEventListener("click", () => {
+  audio.init();
+  audio.click();
+  openBag();
+});
+
+bagClose.addEventListener("click", () => {
+  audio.click();
+  closeBag();
+});
+
+bagDone.addEventListener("click", () => {
+  audio.click();
+  closeBag();
+});
+
+bagDialog.addEventListener("click", (event) => {
+  if (event.target === bagDialog) closeBag();
+});
+
+bagDialog.addEventListener("cancel", (event) => {
+  event.preventDefault();
+  closeBag();
 });
 
 workshopClose.addEventListener("click", closeWorkshop);
@@ -6400,8 +6623,10 @@ function snapshot() {
       energy: Number(magnet.energy.toFixed(2)),
     })),
     activePads: activePads.map((pad) => ({
-      x: Math.round(pad.x),
-      y: Math.round(pad.y),
+      x1: Math.round(pad.x1),
+      y1: Math.round(pad.y1),
+      x2: Math.round(pad.x2),
+      y2: Math.round(pad.y2),
       hits: pad.hits,
     })),
     litRevealDone: game.litReveal.size
