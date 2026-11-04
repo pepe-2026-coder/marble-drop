@@ -150,47 +150,50 @@
 
         <main class="stage" id="stage">
           <div class="machine" id="machine">
-            <canvas id="board" width="720" height="1240" aria-label="物理弹珠台游戏面板"></canvas>
+            <!-- 画布按机柜实际轮廓裁切：透明边距放到框外，弹珠台就能占满可用宽度。 -->
+            <div class="board-frame">
+              <canvas id="board" width="720" height="1240" aria-label="物理弹珠台游戏面板"></canvas>
 
-            <div class="round-badge" id="roundBadge" aria-live="polite">
-              <span class="round-dot"></span>
-              <span id="roundText">等待投珠</span>
-            </div>
+              <div class="round-badge" id="roundBadge" aria-live="polite">
+                <span class="round-dot"></span>
+                <span id="roundText">等待投珠</span>
+              </div>
 
-            <!-- 闯关模式的原型控件保留但未挂载；街机模式不显示等级与机关。 -->
-            <button class="level-badge" id="levelBadge" type="button" aria-label="打开改装工坊" hidden>
-              <span class="level-badge-top">
-                <span>Lv.<b id="levelNumber">1</b></span>
-                <span class="level-badge-cta">改装</span>
-              </span>
-              <span class="level-badge-track"><i id="levelXpFill"></i></span>
-              <span class="level-sp-badge" id="levelSpBadge" hidden>技能点 0</span>
-            </button>
+              <!-- 闯关模式的原型控件保留但未挂载；街机模式不显示等级与机关。 -->
+              <button class="level-badge" id="levelBadge" type="button" aria-label="打开改装工坊" hidden>
+                <span class="level-badge-top">
+                  <span>Lv.<b id="levelNumber">1</b></span>
+                  <span class="level-badge-cta">改装</span>
+                </span>
+                <span class="level-badge-track"><i id="levelXpFill"></i></span>
+                <span class="level-sp-badge" id="levelSpBadge" hidden>技能点 0</span>
+              </button>
 
-            <div class="multiplier-banner" id="multiplierBanner" aria-hidden="true">
-              <span class="banner-kicker">本局倍率</span>
-              <strong id="bannerMult">×2</strong>
-              <span class="banner-sub"><b id="bannerSlots">4</b> 个奖槽亮灯</span>
-            </div>
+              <div class="multiplier-banner" id="multiplierBanner" aria-hidden="true">
+                <span class="banner-kicker">本局倍率</span>
+                <strong id="bannerMult">×2</strong>
+                <span class="banner-sub"><b id="bannerSlots">4</b> 个奖槽亮灯</span>
+              </div>
 
-            <div class="wheel-callout" id="wheelCallout" role="status" aria-live="polite" aria-hidden="true">
-              <span class="wheel-callout-kicker" id="wheelCalloutKicker">ABYSS WHEEL</span>
-              <strong id="wheelCalloutTitle">命运转动中</strong>
-              <span class="wheel-callout-ticket" id="wheelCalloutTicket"></span>
-            </div>
+              <div class="wheel-callout" id="wheelCallout" role="status" aria-live="polite" aria-hidden="true">
+                <span class="wheel-callout-kicker" id="wheelCalloutKicker">ABYSS WHEEL</span>
+                <strong id="wheelCalloutTitle">命运转动中</strong>
+                <span class="wheel-callout-ticket" id="wheelCalloutTicket"></span>
+              </div>
 
-            <div class="hint-bubble" id="hintBubble">
-              <span class="hint-arrow" aria-hidden="true">↧</span>
-              <span id="hintText">拉下右下角弹簧，松手发射</span>
-            </div>
+              <div class="hint-bubble" id="hintBubble">
+                <span class="hint-arrow" aria-hidden="true">↧</span>
+                <span id="hintText">拉下右下角弹簧，松手发射</span>
+              </div>
 
-            <div class="result-card" id="resultCard" role="status" aria-live="polite" aria-hidden="true">
-              <span class="result-eyebrow" id="resultEyebrow">RESULT</span>
-              <h2 id="resultTitle">中奖 ×2</h2>
-              <div class="result-payout" id="resultPayout">+40 颗弹珠</div>
-              <div class="result-ticket" id="resultTicket">获得 1 张彩票</div>
-              <div class="result-progress" id="resultProgress" hidden></div>
-              <div class="result-foot" id="resultFoot">母球正在返回限位器…</div>
+              <div class="result-card" id="resultCard" role="status" aria-live="polite" aria-hidden="true">
+                <span class="result-eyebrow" id="resultEyebrow">RESULT</span>
+                <h2 id="resultTitle">中奖 ×2</h2>
+                <div class="result-payout" id="resultPayout">+40 颗弹珠</div>
+                <div class="result-ticket" id="resultTicket">获得 1 张彩票</div>
+                <div class="result-progress" id="resultProgress" hidden></div>
+                <div class="result-foot" id="resultFoot">母球正在返回限位器…</div>
+              </div>
             </div>
           </div>
         </main>
