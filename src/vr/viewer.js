@@ -242,7 +242,7 @@ function leverPullReference(ray) {
   if (!local) return null;
   const dy = local.direction[1];
   if (Math.abs(dy) < 0.0001) return null;
-  const t = (scene.lever.restY - local.origin[1]) / dy;
+  const t = (scene.lever.y - local.origin[1]) / dy;
   if (!Number.isFinite(t) || t <= 0) return null;
   return local.origin[2] + local.direction[2] * t;
 }

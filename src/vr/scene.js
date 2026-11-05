@@ -68,13 +68,13 @@ const DECK = {
    marble frame sits, tapering to the right where the launch lever stands. */
 const DECK_PLAN = [
   [-0.38, 0.58],
-  [-0.04, 0.58],
-  [0.22, 0.62],
-  [0.38, 0.71],
-  [0.48, 0.84],
-  [0.45, 0.96],
-  [0.26, 1.02],
-  [-0.14, 1.05],
+  [-0.06, 0.58],
+  [0.14, 0.61],
+  [0.28, 0.7],
+  [0.33, 0.86],
+  [0.3, 1.0],
+  [0.12, 1.04],
+  [-0.16, 1.05],
   [-0.36, 1.03],
   [-0.46, 0.94],
   [-0.46, 0.68],
@@ -111,7 +111,7 @@ const DECK_COLORS = {
   key: [0.26, 0.29, 0.36],
   end: [0.4, 0.24, 0.1],
   rod: [0.55, 0.57, 0.62],
-  knob: [0.7, 0.18, 0.12],
+  knob: [0.42, 0.075, 0.06],
 };
 
 /* The deck only has the three controls from the reference sketch:
@@ -120,16 +120,17 @@ const DECK_BUTTONS = [
   { id: "start", x: 0.14, z: 0.88, radius: 0.075, height: 0.032, color: DECK_COLORS.start, hit: 0.1 },
 ];
 
+/* Spring plunger hanging off the display panel's lower-right corner. The
+   control deck is cut away underneath it, exactly like the reference sketch. */
 const LEVER = {
-  x: 0.47,
-  z: 0.9,
-  baseY: 0.7,
-  restY: 0.98,
+  x: 0.4,
+  y: 0.94,
+  z: 0.6,
+  mountZ: 0.4,
   travel: 0.16,
   knobRadius: 0.036,
-  hit: 0.085,
-  /* The plunger is pulled toward the player (+Z), not pressed down. */
-  axis: [0, 0, 1],
+  rodRadius: 0.012,
+  hit: 0.09,
 };
 
 /* ── Geometry helpers ───────────────────────────────────── */
@@ -204,6 +205,33 @@ function cylinderPolygons(cx, y0, cz, radius, height, segments, color) {
   }
   polygons.push({ points: cap, outward: [0, 1, 0], color });
   polygons.push({ points: [...cap].reverse().map((p) => [p[0], y0, p[2]]), outward: [0, -1, 0], color });
+  return polygons;
+}
+
+function cylinderZPolygons(cx, cy, z0, radius, length, segments, color) {
+  const polygons = [];
+  const z1 = z0 + length;
+  for (let i = 0; i < segments; i += 1) {
+    const a0 = (i / segments) * TAU;
+    const a1 = ((i + 1) / segments) * TAU;
+    const x0 = cx + Math.cos(a0) * radius;
+    const y0 = cy + Math.sin(a0) * radius;
+    const x1 = cx + Math.cos(a1) * radius;
+    const y1 = cy + Math.sin(a1) * radius;
+    const mid = (a0 + a1) / 2;
+    polygons.push({
+      points: [[x0, y0, z0], [x0, y0, z1], [x1, y1, z1], [x1, y1, z0]],
+      outward: [Math.cos(mid), Math.sin(mid), 0],
+      color,
+    });
+  }
+  const cap = [];
+  for (let i = 0; i < segments; i += 1) {
+    const angle = (i / segments) * TAU;
+    cap.push([cx + Math.cos(angle) * radius, cy + Math.sin(angle) * radius, z1]);
+  }
+  polygons.push({ points: cap, outward: [0, 0, 1], color });
+  polygons.push({ points: [...cap].reverse().map(([x, y]) => [x, y, z0]), outward: [0, 0, -1], color });
   return polygons;
 }
 
@@ -1039,21 +1067,6 @@ function buildGeometry(gl) {
     );
   }
   deckPolys.push(...cylinderPolygons(LEVER.x, DECK.top + 0.004, LEVER.z, 0.05, 0.03, 18, DECK_COLORS.ring));
-  /* Spring coil around the plunger rod. */
-  for (let ring = 0; ring < 6; ring += 1) {
-    deckPolys.push(
-      ...cylinderPolygons(
-        LEVER.x,
-        DECK.top + 0.045 + ring * 0.024,
-        LEVER.z,
-        0.03,
-        0.009,
-        14,
-        [0.32, 0.34, 0.38],
-      ),
-    );
-  }
-
   /* Slide housing: keeps the plunger looking connected while it is pulled out. */
   deckPolys.push(
     ...boxPolygons(
@@ -1189,13 +1202,64 @@ function buildGeometry(gl) {
     );
   }
 
+  /* Plunger hanging off the display panel: bracket + coil are fixed, the
+     shaft and ball slide toward the player. */
+  const leverBracket = createLitMesh(gl, [
+    ...boxPolygons(
+      LEVER.x - 0.06,
+      LEVER.x + 0.06,
+      LEVER.y - 0.055,
+      LEVER.y + 0.055,
+      LEVER.mountZ - 0.06,
+      LEVER.mountZ + 0.06,
+      [0.1, 0.11, 0.145],
+    ),
+    ...boxPolygons(
+      LEVER.x - 0.04,
+      LEVER.x + 0.04,
+      LEVER.y - 0.035,
+      LEVER.y + 0.035,
+      LEVER.mountZ + 0.02,
+      LEVER.mountZ + 0.09,
+      [0.07, 0.08, 0.1],
+    ),
+  ]);
+  /* Helix of small spheres reads as a coil spring from any angle. */
+  const springPolys = [];
+  const coils = 30;
+  const coilStart = LEVER.mountZ + 0.09;
+  const coilLength = 0.1;
+  for (let step = 0; step < coils; step += 1) {
+    const t = step / coils;
+    const angle = t * Math.PI * 2 * 4;
+    springPolys.push(
+      ...spherePolygons(
+        LEVER.x + Math.cos(angle) * 0.034,
+        LEVER.y + Math.sin(angle) * 0.034,
+        coilStart + t * coilLength,
+        0.009,
+        4,
+        6,
+        [0.78, 0.8, 0.84],
+      ),
+    );
+  }
+  const leverSpring = createLitMesh(gl, springPolys);
   const leverRod = createLitMesh(
     gl,
-    cylinderPolygons(LEVER.x, LEVER.baseY + 0.03, LEVER.z, 0.011, LEVER.restY - LEVER.baseY - 0.03, 12, DECK_COLORS.rod),
+    boxPolygons(
+      LEVER.x - LEVER.rodRadius,
+      LEVER.x + LEVER.rodRadius,
+      LEVER.y - LEVER.rodRadius,
+      LEVER.y + LEVER.rodRadius,
+      0.26,
+      LEVER.z,
+      DECK_COLORS.rod,
+    ),
   );
   const leverKnob = createLitMesh(
     gl,
-    spherePolygons(LEVER.x, LEVER.restY, LEVER.z, LEVER.knobRadius, 8, 14, DECK_COLORS.knob),
+    spherePolygons(LEVER.x, LEVER.y, LEVER.z, LEVER.knobRadius, 8, 14, DECK_COLORS.knob),
   );
 
   /* Status panel leaning against the lower bezel, angled at the player. */
@@ -1239,6 +1303,8 @@ function buildGeometry(gl) {
     buttonCaps,
     leverRod,
     leverKnob,
+    leverBracket,
+    leverSpring,
     hud,
     stool,
     marbleMesh,
@@ -1455,7 +1521,7 @@ export function createScene(canvas, boardCanvas) {
       center: [button.x, DECK.top + 0.02, button.z],
       radius: button.hit,
     })),
-    { id: "lever", center: [LEVER.x, LEVER.restY, LEVER.z], radius: LEVER.hit },
+    { id: "lever", center: [LEVER.x, LEVER.y, LEVER.z], radius: LEVER.hit },
     { id: "feeder", center: [FEEDER.x, FEEDER.y + 0.02, FEEDER.z], radius: FEEDER.hit },
     { id: "stool", center: [STOOL.x, STOOL.seatY, STOOL.z], radius: STOOL.hit },
   ];
@@ -1795,6 +1861,8 @@ export function createScene(canvas, boardCanvas) {
         drawLit(geometry.buttonCaps[button.id], live ? tintFor(button.id) : dim);
       }
       const pull = live ? leverPull : 0;
+      drawLit(geometry.leverBracket);
+      drawLit(geometry.leverSpring);
       drawLit(geometry.leverRod, live ? tintFor("lever") : dim, [0, 0, pull]);
       drawLit(geometry.leverKnob, live ? tintFor("lever") : dim, [0, 0, pull]);
       const stoolHover = hoverId === "stool" && hoverIndex === (cabinet.index ?? index);
