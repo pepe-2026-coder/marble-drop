@@ -110,16 +110,16 @@ const DECK_COLORS = {
 /* The deck only has the three controls from the reference sketch:
    marble frame, start button, launch lever. */
 const DECK_BUTTONS = [
-  { id: "start", x: -0.02, z: 0.88, radius: 0.075, height: 0.032, color: DECK_COLORS.start, hit: 0.1 },
+  { id: "start", x: 0.08, z: 0.84, radius: 0.075, height: 0.032, color: DECK_COLORS.start, hit: 0.1 },
 ];
 
 /* Vertical plunger standing on the right side of the square control deck.
    Grab the ball and press it down; release to launch. */
 const LEVER = {
-  x: 0.3,
-  z: 0.9,
+  x: 0.32,
+  z: 0.95,
   baseY: 0.7,
-  restY: 0.98,
+  restY: 1.02,
   travel: 0.16,
   knobRadius: 0.036,
   rodRadius: 0.011,
@@ -1204,10 +1204,10 @@ function buildGeometry(gl) {
   const startLabel = createQuad(
     gl,
     [
-      [-0.085, 0.7455, 0.945],
-      [0.045, 0.7455, 0.945],
-      [0.045, 0.7455, 0.815],
-      [-0.085, 0.7455, 0.815],
+      [-0.005, 0.7455, 0.905],
+      [0.125, 0.7455, 0.905],
+      [0.125, 0.7455, 0.775],
+      [-0.005, 0.7455, 0.775],
     ],
     [
       [0, 0],
@@ -1296,24 +1296,11 @@ function buildGeometry(gl) {
     gl,
     cylinderPolygons(LEVER.x, LEVER.baseY + 0.03, LEVER.z, LEVER.rodRadius, LEVER.restY - LEVER.baseY - 0.03, 12, DECK_COLORS.rod),
   );
-  const springPolys = [];
-  const coilRings = 18;
-  for (let step = 0; step < coilRings; step += 1) {
-    const t = step / coilRings;
-    const angle = t * Math.PI * 2 * 3;
-    springPolys.push(
-      ...spherePolygons(
-        LEVER.x + Math.cos(angle) * 0.026,
-        LEVER.baseY + 0.06 + t * 0.15,
-        LEVER.z + Math.sin(angle) * 0.026,
-        0.0075,
-        4,
-        6,
-        [0.24, 0.255, 0.3],
-      ),
-    );
-  }
-  const leverSpring = createLitMesh(gl, springPolys);
+  /* Clean plunger sleeve instead of the bead coil. */
+  const leverSleeve = createLitMesh(
+    gl,
+    cylinderPolygons(LEVER.x, LEVER.baseY + 0.03, LEVER.z, 0.024, 0.1, 16, [0.13, 0.14, 0.17]),
+  );
   const leverKnob = createLitMesh(
     gl,
     spherePolygons(LEVER.x, LEVER.restY, LEVER.z, LEVER.knobRadius, 8, 14, DECK_COLORS.knob),
@@ -1361,7 +1348,7 @@ function buildGeometry(gl) {
     buttonCaps,
     leverRod,
     leverKnob,
-    leverSpring,
+    leverSleeve,
     hud,
     stool,
     marbleMesh,
@@ -1922,7 +1909,7 @@ export function createScene(canvas, boardCanvas) {
         drawLit(geometry.buttonCaps[button.id], live ? tintFor(button.id) : dim);
       }
       const pull = live ? leverPull : 0;
-      drawLit(geometry.leverSpring);
+      drawLit(geometry.leverSleeve);
       drawLit(geometry.leverRod, live ? tintFor("lever") : dim, [0, -pull, 0]);
       drawLit(geometry.leverKnob, live ? tintFor("lever") : dim, [0, -pull, 0]);
       const stoolHover = hoverId === "stool" && hoverIndex === (cabinet.index ?? index);
