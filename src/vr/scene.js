@@ -56,13 +56,29 @@ const TAU = Math.PI * 2;
    face. It sits low enough to stay clear of the slot bank but still inside
    arm's reach of a player standing at the machine. */
 const DECK = {
-  left: -0.4,
-  right: 0.4,
+  left: -0.46,
+  right: 0.5,
   bottom: 0.62,
   top: 0.7,
-  back: 0.56,
-  front: 1.02,
+  back: 0.58,
+  front: 1.05,
 };
+
+/* Outline of the deck, taken from the sketch: rounded on the left where the
+   marble frame sits, tapering to the right where the launch lever stands. */
+const DECK_PLAN = [
+  [-0.38, 0.58],
+  [-0.04, 0.58],
+  [0.22, 0.62],
+  [0.38, 0.71],
+  [0.48, 0.84],
+  [0.45, 0.96],
+  [0.26, 1.02],
+  [-0.14, 1.05],
+  [-0.36, 1.03],
+  [-0.46, 0.94],
+  [-0.46, 0.68],
+];
 
 /* Exchange kiosk: a room-level prop with its own local space (origin at the
    floor under its centre). It never shares coordinates with the machines. */
@@ -78,8 +94,8 @@ const SHOP = {
 
 /* Marble feeder: a shallow tray with a hole in the near-left corner. */
 const FEEDER = {
-  x: -0.2,
-  z: 0.82,
+  x: -0.22,
+  z: 0.83,
   width: 0.26,
   depth: 0.22,
   y: 0.716,
@@ -101,17 +117,19 @@ const DECK_COLORS = {
 /* The deck only has the three controls from the reference sketch:
    marble frame, start button, launch lever. */
 const DECK_BUTTONS = [
-  { id: "start", x: 0.06, z: 0.88, radius: 0.075, height: 0.032, color: DECK_COLORS.start, hit: 0.1 },
+  { id: "start", x: 0.14, z: 0.88, radius: 0.075, height: 0.032, color: DECK_COLORS.start, hit: 0.1 },
 ];
 
 const LEVER = {
-  x: 0.29,
-  z: 0.92,
+  x: 0.47,
+  z: 0.9,
   baseY: 0.7,
-  restY: 0.96,
+  restY: 0.98,
   travel: 0.16,
   knobRadius: 0.036,
   hit: 0.085,
+  /* The plunger is pulled toward the player (+Z), not pressed down. */
+  axis: [0, 0, 1],
 };
 
 /* ── Geometry helpers ───────────────────────────────────── */
@@ -125,6 +143,41 @@ function boxPolygons(x0, x1, y0, y1, z0, z1, color) {
     { points: [[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]], outward: [0, -1, 0], color },
     { points: [[x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]], outward: [0, 0, -1], color },
   ];
+}
+
+function prismPolygons(plan, y0, y1, color) {
+  const polygons = [
+    { points: plan.map(([x, z]) => [x, y1, z]), outward: [0, 1, 0], color },
+    { points: plan.map(([x, z]) => [x, y0, z]), outward: [0, -1, 0], color },
+  ];
+  for (let index = 0; index < plan.length; index += 1) {
+    const a = plan[index];
+    const b = plan[(index + 1) % plan.length];
+    const mx = (a[0] + b[0]) / 2;
+    const mz = (a[1] + b[1]) / 2;
+    polygons.push({
+      points: [
+        [a[0], y0, a[1]],
+        [a[0], y1, a[1]],
+        [b[0], y1, b[1]],
+        [b[0], y0, b[1]],
+      ],
+      outward: [mx, 0, mz],
+      color,
+    });
+  }
+  return polygons;
+}
+
+function insetPlan(plan, amount) {
+  const cx = plan.reduce((sum, [x]) => sum + x, 0) / plan.length;
+  const cz = plan.reduce((sum, [, z]) => sum + z, 0) / plan.length;
+  return plan.map(([x, z]) => {
+    const dx = x - cx;
+    const dz = z - cz;
+    const length = Math.hypot(dx, dz) || 1;
+    return [x - (dx / length) * amount, z - (dz / length) * amount];
+  });
 }
 
 function cylinderPolygons(cx, y0, cz, radius, height, segments, color) {
@@ -977,16 +1030,8 @@ function buildGeometry(gl) {
 
   /* ── Control deck ─────────────────────────────────────── */
   const deckPolys = [
-    ...boxPolygons(DECK.left, DECK.right, DECK.bottom, DECK.top, DECK.back, DECK.front, DECK_COLORS.body),
-    ...boxPolygons(
-      DECK.left + 0.02,
-      DECK.right - 0.02,
-      DECK.top,
-      DECK.top + 0.004,
-      DECK.back + 0.02,
-      DECK.front - 0.02,
-      DECK_COLORS.inlay,
-    ),
+    ...prismPolygons(DECK_PLAN, DECK.bottom, DECK.top, DECK_COLORS.body),
+    ...prismPolygons(insetPlan(DECK_PLAN, 0.03), DECK.top, DECK.top + 0.004, DECK_COLORS.inlay),
   ];
   for (const button of DECK_BUTTONS) {
     deckPolys.push(
@@ -994,6 +1039,18 @@ function buildGeometry(gl) {
     );
   }
   deckPolys.push(...cylinderPolygons(LEVER.x, DECK.top + 0.004, LEVER.z, 0.05, 0.03, 18, DECK_COLORS.ring));
+  /* Slide housing: keeps the plunger looking connected while it is pulled out. */
+  deckPolys.push(
+    ...boxPolygons(
+      LEVER.x - 0.035,
+      LEVER.x + 0.035,
+      DECK.top + 0.004,
+      DECK.top + 0.05,
+      LEVER.z - 0.03,
+      LEVER.z + LEVER.travel + 0.03,
+      [0.05, 0.055, 0.07],
+    ),
+  );
 
   /* Marble feeder tray: shallow box, lip, and a hole where the marbles fall. */
   const trayLeft = FEEDER.x - FEEDER.width / 2;
@@ -1030,10 +1087,10 @@ function buildGeometry(gl) {
   const startLabel = createQuad(
     gl,
     [
-      [-0.005, 0.7455, 0.945],
-      [0.125, 0.7455, 0.945],
-      [0.125, 0.7455, 0.815],
-      [-0.005, 0.7455, 0.815],
+      [0.075, 0.7455, 0.945],
+      [0.205, 0.7455, 0.945],
+      [0.205, 0.7455, 0.815],
+      [0.075, 0.7455, 0.815],
     ],
     [
       [0, 0],
@@ -1401,6 +1458,11 @@ export function createScene(canvas, boardCanvas) {
   }
 
   function tick(dt) {
+    if (!leverHeld && leverPull > 0.0005) {
+      leverPull += (0 - leverPull) * Math.min(1, dt * 16);
+      if (leverPull < 0.001) leverPull = 0;
+      leverControl.center[2] = LEVER.z + leverPull;
+    }
     for (let i = marbles.length - 1; i >= 0; i -= 1) {
       const marble = marbles[i];
       marble.t += dt / 0.42;
@@ -1428,9 +1490,16 @@ export function createScene(canvas, boardCanvas) {
     marbleListener = listener;
   }
 
+  let leverHeld = false;
+
   function setLeverPull(pull) {
+    leverHeld = true;
     leverPull = Math.max(0, Math.min(LEVER.travel, pull));
-    leverControl.center[1] = LEVER.restY - leverPull;
+    leverControl.center[2] = LEVER.z + leverPull;
+  }
+
+  function releaseLever() {
+    leverHeld = false;
   }
 
   function setControlState(next) {
@@ -1711,8 +1780,8 @@ export function createScene(canvas, boardCanvas) {
         drawLit(geometry.buttonCaps[button.id], live ? tintFor(button.id) : dim);
       }
       const pull = live ? leverPull : 0;
-      drawLit(geometry.leverRod, live ? tintFor("lever") : dim, [0, -pull, 0]);
-      drawLit(geometry.leverKnob, live ? tintFor("lever") : dim, [0, -pull, 0]);
+      drawLit(geometry.leverRod, live ? tintFor("lever") : dim, [0, 0, pull]);
+      drawLit(geometry.leverKnob, live ? tintFor("lever") : dim, [0, 0, pull]);
       const stoolHover = hoverId === "stool" && hoverIndex === (cabinet.index ?? index);
       drawLit(geometry.stool, stoolHover ? [1.9, 1.75, 1.5] : null);
 
@@ -1774,6 +1843,7 @@ export function createScene(canvas, boardCanvas) {
     controlCenter,
     setControlState,
     setLeverPull,
+    releaseLever,
     updateHud,
     setRays,
     setCabinetLabels,

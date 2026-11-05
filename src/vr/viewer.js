@@ -200,6 +200,16 @@ function toLocal(ray) {
 
 /** Nearest hit across every machine in the room. */
 function pickTarget(ray) {
+  // Controls on the active machine always win: the neighbours' "sit" volumes
+  // are large spheres that can graze the lever of the machine you're at.
+  const activeLocal = toLocalOn(cabinetModels[activeIndex], ray);
+  if (activeLocal) {
+    const activeHit = scene.hitTestRay(activeLocal.origin, activeLocal.direction, true);
+    if (activeHit && activeHit.id !== "cabinet") {
+      return { index: activeIndex, id: activeHit.id, t: activeHit.t };
+    }
+  }
+
   let best = null;
   for (let index = 0; index < cabinets.length; index += 1) {
     const local = toLocalOn(cabinetModels[index], ray);
@@ -222,15 +232,18 @@ function pickControl(ray) {
   return scene.hitTest(local.origin, local.direction);
 }
 
-/** Height of the ray where it crosses the lever's vertical plane. */
-function leverRayHeight(ray) {
+/**
+ * Z where the ray crosses the plane of the plunger knob. Pulling the hand back
+ * (or dragging the mouse down in the preview) increases this value.
+ */
+function leverPullReference(ray) {
   const local = toLocal(ray);
   if (!local) return null;
-  const dz = local.direction[2];
-  if (Math.abs(dz) < 0.0001) return null;
-  const t = (scene.lever.z - local.origin[2]) / dz;
-  if (t <= 0) return null;
-  return local.origin[1] + local.direction[1] * t;
+  const dy = local.direction[1];
+  if (Math.abs(dy) < 0.0001) return null;
+  const t = (scene.lever.restY - local.origin[1]) / dy;
+  if (!Number.isFinite(t) || t <= 0) return null;
+  return local.origin[2] + local.direction[2] * t;
 }
 
 function trigger(id) {
@@ -264,12 +277,12 @@ function press(source, ray) {
 
   if (id === "lever") {
     if (!engineApi.leverGrab()) return false;
-    const height = leverRayHeight(ray);
-    if (height === null) {
+    const reference = leverPullReference(ray);
+    if (reference === null) {
       engineApi.leverCancel();
       return false;
     }
-    leverGrab = { y: height };
+    leverGrab = { z: reference };
     scene.setLeverPull(0);
   } else if (id === "end") {
     const now = performance.now();
@@ -296,7 +309,7 @@ function release(source) {
   if (!pressedId || source !== pressedSource) return;
   if (pressedId === "lever") {
     engineApi.leverRelease();
-    scene.setLeverPull(0);
+    scene.releaseLever();
     leverGrab = null;
   }
   pressedId = null;
@@ -307,9 +320,9 @@ function release(source) {
 
 function dragLever(ray) {
   if (pressedId !== "lever" || !leverGrab) return;
-  const height = leverRayHeight(ray);
-  if (height === null) return;
-  const pull = clamp(leverGrab.y - height, 0, scene.lever.travel);
+  const reference = leverPullReference(ray);
+  if (reference === null) return;
+  const pull = clamp(reference - leverGrab.z, 0, scene.lever.travel);
   scene.setLeverPull(pull);
   engineApi.leverPull(pull / scene.lever.travel);
 }
@@ -508,7 +521,7 @@ function cancelPress() {
   pressedSource = null;
   leverGrab = null;
   endArmedUntil = 0;
-  scene?.setLeverPull(0);
+  scene?.releaseLever();
   scene?.setControlState({ pressed: null });
   scene?.setRays([]);
 }
@@ -1092,6 +1105,19 @@ export function initVR() {
     stand: standUp,
     sitAt,
     resetView,
+    debugCenter(id) {
+      return scene?.controlCenter(id) || scene?.kioskCenter(id) || null;
+    },
+    debugLocal(x, y) {
+      const ray = mouseRay(x, y);
+      const local = toLocal(ray);
+      if (!local) return null;
+      return { origin: local.origin, dir: local.direction, hit: scene.hitTestRay(local.origin, local.direction, true) };
+    },
+    debugPick(x, y) {
+      const ray = mouseRay(x, y);
+      return ray ? pickTarget(ray) : null;
+    },
     get activeTable() {
       return cabinets[activeIndex].id;
     },
