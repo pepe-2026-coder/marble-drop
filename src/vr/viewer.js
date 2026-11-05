@@ -233,18 +233,15 @@ function pickControl(ray) {
   return scene.hitTest(local.origin, local.direction);
 }
 
-/**
- * Z where the ray crosses the plane of the plunger knob. Pulling the hand back
- * (or dragging the mouse down in the preview) increases this value.
- */
+/** Height where the ray crosses the plunger's vertical plane. */
 function leverPullReference(ray) {
   const local = toLocal(ray);
   if (!local) return null;
-  const dy = local.direction[1];
-  if (Math.abs(dy) < 0.0001) return null;
-  const t = (scene.lever.y - local.origin[1]) / dy;
+  const dz = local.direction[2];
+  if (Math.abs(dz) < 0.0001) return null;
+  const t = (scene.lever.z - local.origin[2]) / dz;
   if (!Number.isFinite(t) || t <= 0) return null;
-  return local.origin[2] + local.direction[2] * t;
+  return local.origin[1] + local.direction[1] * t;
 }
 
 function trigger(id) {
@@ -285,7 +282,7 @@ function press(source, ray) {
       engineApi.leverCancel();
       return false;
     }
-    leverGrab = { z: reference };
+    leverGrab = { y: reference };
     scene.setLeverPull(0);
   } else if (id === "end") {
     const now = performance.now();
@@ -325,7 +322,7 @@ function dragLever(ray) {
   if (pressedId !== "lever" || !leverGrab) return;
   const reference = leverPullReference(ray);
   if (reference === null) return;
-  const pull = clamp(reference - leverGrab.z, 0, scene.lever.travel);
+  const pull = clamp(leverGrab.y - reference, 0, scene.lever.travel);
   scene.setLeverPull(pull);
   engineApi.leverPull(pull / scene.lever.travel);
 }

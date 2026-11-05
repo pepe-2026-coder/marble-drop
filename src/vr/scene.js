@@ -67,17 +67,10 @@ const DECK = {
 /* Outline of the deck, taken from the sketch: rounded on the left where the
    marble frame sits, tapering to the right where the launch lever stands. */
 const DECK_PLAN = [
-  [-0.38, 0.58],
-  [-0.06, 0.58],
-  [0.14, 0.61],
-  [0.28, 0.7],
-  [0.33, 0.86],
-  [0.3, 1.0],
-  [0.12, 1.04],
-  [-0.16, 1.05],
-  [-0.36, 1.03],
-  [-0.46, 0.94],
-  [-0.46, 0.68],
+  [-0.4, 0.56],
+  [0.4, 0.56],
+  [0.4, 1.02],
+  [-0.4, 1.02],
 ];
 
 /* Exchange kiosk: a room-level prop with its own local space (origin at the
@@ -117,19 +110,19 @@ const DECK_COLORS = {
 /* The deck only has the three controls from the reference sketch:
    marble frame, start button, launch lever. */
 const DECK_BUTTONS = [
-  { id: "start", x: 0.14, z: 0.88, radius: 0.075, height: 0.032, color: DECK_COLORS.start, hit: 0.1 },
+  { id: "start", x: -0.02, z: 0.88, radius: 0.075, height: 0.032, color: DECK_COLORS.start, hit: 0.1 },
 ];
 
-/* Spring plunger hanging off the display panel's lower-right corner. The
-   control deck is cut away underneath it, exactly like the reference sketch. */
+/* Vertical plunger standing on the right side of the square control deck.
+   Grab the ball and press it down; release to launch. */
 const LEVER = {
-  x: 0.4,
-  y: 0.94,
-  z: 0.6,
-  mountZ: 0.4,
+  x: 0.3,
+  z: 0.9,
+  baseY: 0.7,
+  restY: 0.98,
   travel: 0.16,
   knobRadius: 0.036,
-  rodRadius: 0.012,
+  rodRadius: 0.011,
   hit: 0.09,
 };
 
@@ -541,6 +534,71 @@ function makeStartLabelTexture() {
   return canvas;
 }
 
+function makeCarpetTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext("2d");
+
+  ctx.fillStyle = "#3a0f16";
+  ctx.fillRect(0, 0, 512, 512);
+
+  // Diamond lattice.
+  ctx.strokeStyle = "rgba(255, 180, 150, 0.10)";
+  ctx.lineWidth = 3;
+  for (let i = -512; i < 512; i += 64) {
+    ctx.beginPath();
+    ctx.moveTo(i, 0);
+    ctx.lineTo(i + 512, 512);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(i + 512, 0);
+    ctx.lineTo(i, 512);
+    ctx.stroke();
+  }
+
+  // Dots at the lattice crossings.
+  ctx.fillStyle = "rgba(255, 200, 160, 0.12)";
+  for (let y = 0; y < 512; y += 64) {
+    for (let x = 0; x < 512; x += 64) {
+      ctx.beginPath();
+      ctx.arc(x, y, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Gold border.
+  ctx.strokeStyle = "rgba(231, 181, 102, 0.35)";
+  ctx.lineWidth = 10;
+  ctx.strokeRect(16, 16, 480, 480);
+  return canvas;
+}
+
+function makeWallSignTexture() {
+  const canvas = document.createElement("canvas");
+  canvas.width = 1024;
+  canvas.height = 256;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#05060b";
+  ctx.fillRect(0, 0, 1024, 256);
+  ctx.strokeStyle = "rgba(34, 230, 255, 0.55)";
+  ctx.lineWidth = 8;
+  ctx.strokeRect(10, 10, 1004, 236);
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.font = '800 96px "Arial Black", "Helvetica Neue", Arial, sans-serif';
+  ctx.shadowColor = "rgba(34, 230, 255, 0.9)";
+  ctx.shadowBlur = 30;
+  ctx.fillStyle = "#bff4ff";
+  ctx.fillText("MARBLE DROP", 512, 108);
+  ctx.shadowBlur = 16;
+  ctx.shadowColor = "rgba(255, 47, 179, 0.9)";
+  ctx.font = '700 56px "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif';
+  ctx.fillStyle = "#ffb3e6";
+  ctx.fillText("弹 珠 厅", 512, 200);
+  return canvas;
+}
+
 function makeShopTexture() {
   const canvas = document.createElement("canvas");
   canvas.width = 512;
@@ -867,6 +925,37 @@ function buildGeometry(gl) {
     ],
   );
 
+  const wallSign = createQuad(
+    gl,
+    [
+      [-3.1, 2.02, -3.14],
+      [-0.9, 2.02, -3.14],
+      [-0.9, 2.56, -3.14],
+      [-3.1, 2.56, -3.14],
+    ],
+    [
+      [0, 0],
+      [1, 0],
+      [1, 1],
+      [0, 1],
+    ],
+  );
+  const wallSign2 = createQuad(
+    gl,
+    [
+      [0.9, 2.02, -3.14],
+      [3.1, 2.02, -3.14],
+      [3.1, 2.56, -3.14],
+      [0.9, 2.56, -3.14],
+    ],
+    [
+      [0, 0],
+      [1, 0],
+      [1, 1],
+      [0, 1],
+    ],
+  );
+
   const wallGlow = createQuad(
     gl,
     [
@@ -1115,10 +1204,10 @@ function buildGeometry(gl) {
   const startLabel = createQuad(
     gl,
     [
-      [0.075, 0.7455, 0.945],
-      [0.205, 0.7455, 0.945],
-      [0.205, 0.7455, 0.815],
-      [0.075, 0.7455, 0.815],
+      [-0.085, 0.7455, 0.945],
+      [0.045, 0.7455, 0.945],
+      [0.045, 0.7455, 0.815],
+      [-0.085, 0.7455, 0.815],
     ],
     [
       [0, 0],
@@ -1202,66 +1291,33 @@ function buildGeometry(gl) {
     );
   }
 
-  /* Plunger hanging off the display panel: bracket + coil are fixed, the
-     shaft and ball slide toward the player. */
-  const leverBracket = createLitMesh(gl, [
-    ...boxPolygons(
-      LEVER.x - 0.06,
-      LEVER.x + 0.06,
-      LEVER.y - 0.055,
-      LEVER.y + 0.055,
-      LEVER.mountZ - 0.06,
-      LEVER.mountZ + 0.06,
-      [0.1, 0.11, 0.145],
-    ),
-    ...boxPolygons(
-      LEVER.x - 0.04,
-      LEVER.x + 0.04,
-      LEVER.y - 0.035,
-      LEVER.y + 0.035,
-      LEVER.mountZ + 0.02,
-      LEVER.mountZ + 0.09,
-      [0.07, 0.08, 0.1],
-    ),
-  ]);
-  /* Helix of small spheres reads as a coil spring from any angle. */
+  /* Vertical plunger: base ring, shaft, coil spring and the red ball. */
+  const leverRod = createLitMesh(
+    gl,
+    cylinderPolygons(LEVER.x, LEVER.baseY + 0.03, LEVER.z, LEVER.rodRadius, LEVER.restY - LEVER.baseY - 0.03, 12, DECK_COLORS.rod),
+  );
   const springPolys = [];
-  const coils = 30;
-  const coilStart = LEVER.mountZ + 0.09;
-  const coilLength = 0.1;
-  for (let step = 0; step < coils; step += 1) {
-    const t = step / coils;
-    const angle = t * Math.PI * 2 * 4;
+  const coilRings = 18;
+  for (let step = 0; step < coilRings; step += 1) {
+    const t = step / coilRings;
+    const angle = t * Math.PI * 2 * 3;
     springPolys.push(
       ...spherePolygons(
-        LEVER.x + Math.cos(angle) * 0.034,
-        LEVER.y + Math.sin(angle) * 0.034,
-        coilStart + t * coilLength,
-        0.009,
+        LEVER.x + Math.cos(angle) * 0.026,
+        LEVER.baseY + 0.06 + t * 0.15,
+        LEVER.z + Math.sin(angle) * 0.026,
+        0.0075,
         4,
         6,
-        [0.78, 0.8, 0.84],
+        [0.24, 0.255, 0.3],
       ),
     );
   }
   const leverSpring = createLitMesh(gl, springPolys);
-  const leverRod = createLitMesh(
-    gl,
-    boxPolygons(
-      LEVER.x - LEVER.rodRadius,
-      LEVER.x + LEVER.rodRadius,
-      LEVER.y - LEVER.rodRadius,
-      LEVER.y + LEVER.rodRadius,
-      0.26,
-      LEVER.z,
-      DECK_COLORS.rod,
-    ),
-  );
   const leverKnob = createLitMesh(
     gl,
-    spherePolygons(LEVER.x, LEVER.y, LEVER.z, LEVER.knobRadius, 8, 14, DECK_COLORS.knob),
+    spherePolygons(LEVER.x, LEVER.restY, LEVER.z, LEVER.knobRadius, 8, 14, DECK_COLORS.knob),
   );
-
   /* Status panel leaning against the lower bezel, angled at the player. */
   const hud = createQuad(
     gl,
@@ -1290,6 +1346,8 @@ function buildGeometry(gl) {
     carpet,
     wallGlow,
     wallGlow2,
+    wallSign,
+    wallSign2,
     neonBar,
     neonBar2,
     screen,
@@ -1303,7 +1361,6 @@ function buildGeometry(gl) {
     buttonCaps,
     leverRod,
     leverKnob,
-    leverBracket,
     leverSpring,
     hud,
     stool,
@@ -1521,7 +1578,7 @@ export function createScene(canvas, boardCanvas) {
       center: [button.x, DECK.top + 0.02, button.z],
       radius: button.hit,
     })),
-    { id: "lever", center: [LEVER.x, LEVER.y, LEVER.z], radius: LEVER.hit },
+    { id: "lever", center: [LEVER.x, LEVER.restY, LEVER.z], radius: LEVER.hit },
     { id: "feeder", center: [FEEDER.x, FEEDER.y + 0.02, FEEDER.z], radius: FEEDER.hit },
     { id: "stool", center: [STOOL.x, STOOL.seatY, STOOL.z], radius: STOOL.hit },
   ];
@@ -1542,7 +1599,7 @@ export function createScene(canvas, boardCanvas) {
     if (!leverHeld && leverPull > 0.0005) {
       leverPull += (0 - leverPull) * Math.min(1, dt * 16);
       if (leverPull < 0.001) leverPull = 0;
-      leverControl.center[2] = LEVER.z + leverPull;
+      leverControl.center[1] = LEVER.restY - leverPull;
     }
     for (let i = marbles.length - 1; i >= 0; i -= 1) {
       const marble = marbles[i];
@@ -1576,7 +1633,7 @@ export function createScene(canvas, boardCanvas) {
   function setLeverPull(pull) {
     leverHeld = true;
     leverPull = Math.max(0, Math.min(LEVER.travel, pull));
-    leverControl.center[2] = LEVER.z + leverPull;
+    leverControl.center[1] = LEVER.restY - leverPull;
   }
 
   function releaseLever() {
@@ -1691,6 +1748,8 @@ export function createScene(canvas, boardCanvas) {
   const marqueeTexture = createTexture(gl, makeMarqueeTexture());
   const refreshTexture = createTexture(gl, makeRefreshTexture());
   const startLabelTexture = createTexture(gl, makeStartLabelTexture());
+  const carpetTexture = createTexture(gl, makeCarpetTexture());
+  const wallSignTexture = createTexture(gl, makeWallSignTexture());
   const shopCanvas = makeShopTexture();
   const shopCtx = shopCanvas.getContext("2d");
   const shopTexture = createTexture(gl, shopCanvas);
@@ -1822,7 +1881,9 @@ export function createScene(canvas, boardCanvas) {
     beginLit(projection, view, activeModel, eye);
     drawLit(geometry.floor);
     drawLit(geometry.room);
-    drawTextured(projection, view, geometry.carpet, glowTexture, activeModel, [0.45, 0.12, 0.16], 0.55, "alpha");
+    drawTextured(projection, view, geometry.carpet, carpetTexture, activeModel, [1, 1, 1], 1);
+    drawTextured(projection, view, geometry.wallSign, wallSignTexture, activeModel, [1, 1, 1], 1);
+    drawTextured(projection, view, geometry.wallSign2, wallSignTexture, activeModel, [1, 1, 1], 1);
     drawTextured(projection, view, geometry.wallGlow, glowTexture, activeModel, [0.35, 0.75, 1.0], 0.16, "additive");
     drawTextured(projection, view, geometry.wallGlow2, glowTexture, activeModel, [1.0, 0.45, 0.8], 0.14, "additive");
     drawTextured(projection, view, geometry.ceilingLamp, stripTexture, activeModel, [1.0, 0.96, 0.88], 0.85, "additive");
@@ -1861,10 +1922,9 @@ export function createScene(canvas, boardCanvas) {
         drawLit(geometry.buttonCaps[button.id], live ? tintFor(button.id) : dim);
       }
       const pull = live ? leverPull : 0;
-      drawLit(geometry.leverBracket);
       drawLit(geometry.leverSpring);
-      drawLit(geometry.leverRod, live ? tintFor("lever") : dim, [0, 0, pull]);
-      drawLit(geometry.leverKnob, live ? tintFor("lever") : dim, [0, 0, pull]);
+      drawLit(geometry.leverRod, live ? tintFor("lever") : dim, [0, -pull, 0]);
+      drawLit(geometry.leverKnob, live ? tintFor("lever") : dim, [0, -pull, 0]);
       const stoolHover = hoverId === "stool" && hoverIndex === (cabinet.index ?? index);
       drawLit(geometry.stool, stoolHover ? [1.9, 1.75, 1.5] : null);
 
