@@ -4,7 +4,7 @@
    Dependency-free WebGL (GLSL ES 1.00, works on WebGL 1 and 2).
    ============================================================ */
 
-const FOG = [0.012, 0.014, 0.024];
+const FOG = [0.045, 0.05, 0.07];
 
 /* Everything below is in cabinet-local metres: +Y up, +Z toward the
    player, origin on the floor at the centre of the cabinet footprint. */
@@ -46,7 +46,7 @@ const COLORS = {
   bezel: [0.03, 0.033, 0.045],
   top: [0.21, 0.23, 0.3],
   marqueeBack: [0.06, 0.07, 0.09],
-  floor: [0.062, 0.07, 0.092],
+  floor: [0.105, 0.115, 0.145],
 };
 
 const TAU = Math.PI * 2;
@@ -753,27 +753,27 @@ function buildGeometry(gl) {
     {
       points: [[-7, 0, -3.2], [7, 0, -3.2], [7, 3.4, -3.2], [-7, 3.4, -3.2]],
       outward: [0, 0, 1],
-      color: [0.05, 0.055, 0.075],
+      color: [0.16, 0.175, 0.22],
     },
     {
       points: [[-5.6, 0, -3.2], [-5.6, 0, 5.4], [-5.6, 3.4, 5.4], [-5.6, 3.4, -3.2]],
       outward: [1, 0, 0],
-      color: [0.04, 0.045, 0.06],
+      color: [0.13, 0.14, 0.18],
     },
     {
       points: [[5.6, 0, -3.2], [5.6, 0, 5.4], [5.6, 3.4, 5.4], [5.6, 3.4, -3.2]],
       outward: [-1, 0, 0],
-      color: [0.04, 0.045, 0.06],
+      color: [0.13, 0.14, 0.18],
     },
     {
       points: [[-5.6, 3.4, -3.2], [5.6, 3.4, -3.2], [5.6, 3.4, 5.4], [-5.6, 3.4, 5.4]],
       outward: [0, -1, 0],
-      color: [0.03, 0.035, 0.05],
+      color: [0.1, 0.11, 0.14],
     },
     {
       points: [[-5.6, 0, 5.4], [5.6, 0, 5.4], [5.6, 3.4, 5.4], [-5.6, 3.4, 5.4]],
       outward: [0, 0, -1],
-      color: [0.04, 0.045, 0.06],
+      color: [0.13, 0.14, 0.18],
     },
   ]);
 
@@ -1039,6 +1039,21 @@ function buildGeometry(gl) {
     );
   }
   deckPolys.push(...cylinderPolygons(LEVER.x, DECK.top + 0.004, LEVER.z, 0.05, 0.03, 18, DECK_COLORS.ring));
+  /* Spring coil around the plunger rod. */
+  for (let ring = 0; ring < 6; ring += 1) {
+    deckPolys.push(
+      ...cylinderPolygons(
+        LEVER.x,
+        DECK.top + 0.045 + ring * 0.024,
+        LEVER.z,
+        0.03,
+        0.009,
+        14,
+        [0.32, 0.34, 0.38],
+      ),
+    );
+  }
+
   /* Slide housing: keeps the plunger looking connected while it is pulled out. */
   deckPolys.push(
     ...boxPolygons(
@@ -1644,10 +1659,10 @@ export function createScene(canvas, boardCanvas) {
     gl.uniformMatrix4fv(lit.uModel, false, model);
     gl.uniform3fv(lit.uEye, eye);
     gl.uniform3fv(lit.uKeyDir, keyDir);
-    gl.uniform3f(lit.uKeyColor, 1.05, 0.94, 0.78);
+    gl.uniform3f(lit.uKeyColor, 1.25, 1.12, 0.94);
     gl.uniform3fv(lit.uFillDir, fillDir);
-    gl.uniform3f(lit.uFillColor, 0.32, 0.44, 0.78);
-    gl.uniform3f(lit.uAmbient, 0.5, 0.54, 0.64);
+    gl.uniform3f(lit.uFillColor, 0.5, 0.62, 0.95);
+    gl.uniform3f(lit.uAmbient, 0.92, 0.96, 1.04);
     gl.uniform3fv(lit.uFog, FOG);
     gl.uniform3f(lit.uTint, 1, 1, 1);
     gl.uniform3f(lit.uOffset, 0, 0, 0);
@@ -1744,9 +1759,9 @@ export function createScene(canvas, boardCanvas) {
     drawTextured(projection, view, geometry.carpet, glowTexture, activeModel, [0.45, 0.12, 0.16], 0.55, "alpha");
     drawTextured(projection, view, geometry.wallGlow, glowTexture, activeModel, [0.35, 0.75, 1.0], 0.16, "additive");
     drawTextured(projection, view, geometry.wallGlow2, glowTexture, activeModel, [1.0, 0.45, 0.8], 0.14, "additive");
-    drawTextured(projection, view, geometry.ceilingLamp, stripTexture, activeModel, [1.0, 0.95, 0.85], 0.5, "additive");
-    drawTextured(projection, view, geometry.ceilingLamp2, stripTexture, activeModel, [1.0, 0.95, 0.85], 0.5, "additive");
-    drawTextured(projection, view, geometry.ceilingLamp3, stripTexture, activeModel, [1.0, 0.95, 0.85], 0.5, "additive");
+    drawTextured(projection, view, geometry.ceilingLamp, stripTexture, activeModel, [1.0, 0.96, 0.88], 0.85, "additive");
+    drawTextured(projection, view, geometry.ceilingLamp2, stripTexture, activeModel, [1.0, 0.96, 0.88], 0.85, "additive");
+    drawTextured(projection, view, geometry.ceilingLamp3, stripTexture, activeModel, [1.0, 0.96, 0.88], 0.85, "additive");
     drawTextured(projection, view, geometry.neonBar, stripTexture, activeModel, [0.4, 0.85, 1.0], 0.7, "additive");
     drawTextured(projection, view, geometry.neonBar2, stripTexture, activeModel, [1.0, 0.45, 0.85], 0.55, "additive");
     drawTextured(projection, view, geometry.shadow, glowTexture, activeModel, [0, 0, 0], 0.72, "alpha");

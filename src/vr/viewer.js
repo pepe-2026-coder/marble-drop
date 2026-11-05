@@ -7,6 +7,7 @@
 import { createScene } from "./scene.js";
 import { engineApi } from "../game/engine.js";
 import { TABLE_LIST } from "../game/tables.js";
+import { audio } from "../audio.js";
 import {
   invertRigid,
   lookAt,
@@ -261,8 +262,10 @@ function press(source, ray) {
     return true;
   }
   if (id === "shop") {
+    audio.init();
     const result = engineApi.shopExchange();
     shopMessage = result?.message || "";
+    if (result?.ok) audio.ticket();
     return true;
   }
   if (id === "cabinet" || id === "stool") {
@@ -467,7 +470,10 @@ export function openVR() {
       return;
     }
     scene.setCabinetLabels(cabinets.map((cabinet) => ({ name: cabinet.name, accent: cabinet.accent })));
-    scene.onMarbleIn(() => engineApi.adjustBet(1));
+    scene.onMarbleIn(() => {
+      engineApi.adjustBet(1);
+      audio.marbleHit(0.35);
+    });
     buildCabinetModels(null);
     wireInput();
     if (typeof ResizeObserver === "function") {
@@ -508,6 +514,7 @@ export function openVR() {
   window.dispatchEvent(new CustomEvent("marble:vr-open"));
 
   // VR plays straight from the global wallet: no run, no minimum stake.
+  audio.init();
   engineApi.setVrWallet(true);
 
   resizeCanvas();
