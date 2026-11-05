@@ -117,9 +117,9 @@ const DECK_BUTTONS = [
    Grab the ball and press it down; release to launch. */
 const LEVER = {
   x: 0.32,
-  z: 0.95,
+  z: 0.8,
   baseY: 0.7,
-  restY: 1.02,
+  restY: 0.98,
   travel: 0.16,
   knobRadius: 0.036,
   rodRadius: 0.011,
@@ -1155,19 +1155,7 @@ function buildGeometry(gl) {
       ...cylinderPolygons(button.x, DECK.top + 0.004, button.z, button.radius + 0.009, 0.006, 18, DECK_COLORS.ring),
     );
   }
-  deckPolys.push(...cylinderPolygons(LEVER.x, DECK.top + 0.004, LEVER.z, 0.05, 0.03, 18, DECK_COLORS.ring));
-  /* Slide housing: keeps the plunger looking connected while it is pulled out. */
-  deckPolys.push(
-    ...boxPolygons(
-      LEVER.x - 0.035,
-      LEVER.x + 0.035,
-      DECK.top + 0.004,
-      DECK.top + 0.05,
-      LEVER.z - 0.03,
-      LEVER.z + LEVER.travel + 0.03,
-      [0.05, 0.055, 0.07],
-    ),
-  );
+  deckPolys.push(...cylinderPolygons(LEVER.x, DECK.top + 0.004, LEVER.z, 0.038, 0.018, 18, DECK_COLORS.ring));
 
   /* Marble feeder tray: shallow box, lip, and a hole where the marbles fall. */
   const trayLeft = FEEDER.x - FEEDER.width / 2;
@@ -1200,14 +1188,13 @@ function buildGeometry(gl) {
 
   const marbleMesh = createLitMesh(gl, spherePolygons(0, 0, 0, 0.013, 6, 10, [0.93, 0.93, 0.88]));
 
-  /* Debug refresh button, floating at the left of the active machine. */
   const startLabel = createQuad(
     gl,
     [
-      [-0.005, 0.7455, 0.905],
-      [0.125, 0.7455, 0.905],
-      [0.125, 0.7455, 0.775],
-      [-0.005, 0.7455, 0.775],
+      [0.015, 0.7455, 0.905],
+      [0.145, 0.7455, 0.905],
+      [0.145, 0.7455, 0.775],
+      [0.015, 0.7455, 0.775],
     ],
     [
       [0, 0],
@@ -1216,7 +1203,6 @@ function buildGeometry(gl) {
       [0, 1],
     ],
   );
-
   const shopBody = createLitMesh(gl, [
     ...boxPolygons(SHOP.left, SHOP.right, 0, 0.62, SHOP.back, SHOP.front, [0.11, 0.12, 0.15]),
     ...boxPolygons(SHOP.left, SHOP.right, 0.62, SHOP.top, SHOP.back, SHOP.back + 0.07, [0.1, 0.11, 0.14]),
@@ -1296,11 +1282,6 @@ function buildGeometry(gl) {
     gl,
     cylinderPolygons(LEVER.x, LEVER.baseY + 0.03, LEVER.z, LEVER.rodRadius, LEVER.restY - LEVER.baseY - 0.03, 12, DECK_COLORS.rod),
   );
-  /* Clean plunger sleeve instead of the bead coil. */
-  const leverSleeve = createLitMesh(
-    gl,
-    cylinderPolygons(LEVER.x, LEVER.baseY + 0.03, LEVER.z, 0.024, 0.1, 16, [0.13, 0.14, 0.17]),
-  );
   const leverKnob = createLitMesh(
     gl,
     spherePolygons(LEVER.x, LEVER.restY, LEVER.z, LEVER.knobRadius, 8, 14, DECK_COLORS.knob),
@@ -1348,7 +1329,6 @@ function buildGeometry(gl) {
     buttonCaps,
     leverRod,
     leverKnob,
-    leverSleeve,
     hud,
     stool,
     marbleMesh,
@@ -1909,7 +1889,6 @@ export function createScene(canvas, boardCanvas) {
         drawLit(geometry.buttonCaps[button.id], live ? tintFor(button.id) : dim);
       }
       const pull = live ? leverPull : 0;
-      drawLit(geometry.leverSleeve);
       drawLit(geometry.leverRod, live ? tintFor("lever") : dim, [0, -pull, 0]);
       drawLit(geometry.leverKnob, live ? tintFor("lever") : dim, [0, -pull, 0]);
       const stoolHover = hoverId === "stool" && hoverIndex === (cabinet.index ?? index);
