@@ -2,3 +2,6 @@
 node_modules/
 *.log
 .DS_Store
+
+# Local HTTPS cert for headset testing
+scripts/certs/

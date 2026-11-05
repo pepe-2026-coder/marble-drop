@@ -10,6 +10,7 @@ import { SKIN_LIST, getSkin, skinCssVars } from "./game/skins.js";
 import { TABLE_LIST, getTable, tableCssVars } from "./game/tables.js";
 import { LEVELS } from "./game/levels.js";
 import { drawTablePreview } from "./game/tablePreview.js";
+import { initVR } from "./vr/viewer.js";
 import { toast } from "./ui/toast.js";
 
 const $ = (id) => document.getElementById(id);
@@ -890,6 +891,7 @@ window.addEventListener("marble:shop", () => {
 /* ── Init ────────────────────────────────────────────────── */
 
 showScreen("menu");
+initVR();
 
 // A small read-only debug surface for QA and future tooling.
 window.__MARBLE_APP__ = {

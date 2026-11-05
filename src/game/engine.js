@@ -3,7 +3,7 @@
    纯 Canvas + 自研 2D 物理的小型竖屏弹珠台
    ============================================================ */
 
-import { account } from "../account.js";
+import { account, economy } from "../account.js";
 import { audio, vibrate } from "../audio.js";
 import { toast } from "../ui/toast.js";
 import {
@@ -1128,6 +1128,10 @@ function pickLitSlots(count) {
 
 /* ── UI helpers ──────────────────────────────────────────── */
 
+/* VR plays straight from the global wallet: no run, no minimum stake.
+   Declared early because the account subscription runs during module init. */
+let vrWallet = false;
+
 function saveGame() {
   account.save();
 }
@@ -1169,26 +1173,30 @@ function bumpNumber(el) {
 }
 
 function updateBetUI() {
-  const hasRun = account.hasRun;
-  const maxBet = Math.max(5, Math.min(99, game.marbles));
-  if (hasRun && game.phase === "idle" && game.marbles >= 5) {
-    game.bet = clamp(game.bet, 5, maxBet);
+  const canPlay = account.hasRun || vrWallet;
+  const min = minBetAmount();
+  const maxBet = maxBetAmount();
+  if (canPlay && game.phase === "idle" && (vrWallet || game.marbles >= min)) {
+    game.bet = clamp(game.bet, min, maxBet);
   }
   betInput.value = String(game.bet);
-  betInput.max = String(Math.min(99, Math.max(5, game.marbles)));
+  betInput.max = String(maxBet);
   startBetText.textContent = String(game.bet);
   playBet.textContent = String(game.bet);
 
   const canStart =
-    hasRun && game.phase === "idle" && game.marbles >= game.bet && game.marbles >= 5;
+    canPlay &&
+    game.phase === "idle" &&
+    game.bet >= 5 &&
+    (vrWallet || game.marbles >= game.bet);
   startBtn.disabled = !canStart;
-  if (!hasRun) startLabel.textContent = "请先开始街机游戏";
+  if (!canPlay) startLabel.textContent = "请先开始街机游戏";
   else if (game.phase !== "idle") startLabel.textContent = "游戏进行中";
   else if (game.marbles < 5) startLabel.textContent = "弹珠不足";
+  else if (vrWallet && game.bet < 5) startLabel.textContent = "先投珠";
   else startLabel.textContent = "开始投珠";
-  betMinus.disabled = game.phase !== "idle" || game.marbles < 5 || game.bet <= 5;
-  betPlus.disabled =
-    game.phase !== "idle" || game.marbles < 5 || game.bet >= Math.min(99, game.marbles);
+  betMinus.disabled = game.phase !== "idle" || game.marbles < 5 || game.bet <= min;
+  betPlus.disabled = game.phase !== "idle" || game.marbles < 5 || game.bet >= maxBet;
 
   quickRow.querySelectorAll("[data-bet]").forEach((button) => {
     const value = Number(button.dataset.bet);
@@ -1203,8 +1211,7 @@ function syncAccountUI(state) {
   game.marbles = state.run?.active ? state.run.marbles : state.marbles;
   game.tickets = state.tickets;
   if (game.phase === "idle") {
-    const maxBet = Math.max(5, Math.min(99, game.marbles));
-    game.bet = clamp(game.bet, 5, maxBet);
+    game.bet = clamp(game.bet, minBetAmount(), maxBetAmount());
   }
   marbleCountEl.textContent = String(game.marbles);
   ticketCountEl.textContent = String(game.tickets);
@@ -1221,6 +1228,10 @@ account.subscribe(syncAccountUI);
 
 function setPhase(phase) {
   game.phase = phase;
+  // In VR every round starts from zero: the marbles are spent, so the next
+  // ball needs a fresh trip to the feeder. (finishReturn sets game.phase
+  // directly first, so this cannot rely on a previous-phase comparison.)
+  if (vrWallet && phase === "idle") game.bet = 0;
   const playing = phase !== "idle" || game.mode === "challenge";
   dockIdle.hidden = playing;
   dockPlay.hidden = !playing;
@@ -2894,13 +2905,13 @@ function resetAbyssRound() {
 function startRound() {
   audio.init();
   if (game.phase !== "idle") return;
-  if (!account.hasRun) {
+  if (!account.hasRun && !vrWallet) {
     toast("请先在街机模式中开始一局游戏");
     window.dispatchEvent(new CustomEvent("marble:home"));
     return;
   }
   if (game.marbles < 5) {
-    endRunSession("bankrupt");
+    if (!vrWallet) endRunSession("bankrupt");
     return;
   }
   if (game.bet > game.marbles) {
@@ -2955,7 +2966,8 @@ function startRound() {
 
   setPhase("starting");
   setPowerUI(0, "starting");
-  setMarbles(game.marbles - game.bet, false);
+  // In VR the stake was already paid one marble at a time at the feeder.
+  if (!vrWallet) setMarbles(game.marbles - game.bet, false);
   setRoundBadge("live", `第 ${game.round} 局 · 亮灯中`);
   setPlayStatus("奖槽亮灯中…", "限位器准备开启", true);
   hideHint();
@@ -3096,6 +3108,50 @@ function releaseKeyboardCharge() {
   game.charging = false;
   game.chargeMode = null;
   launchBall(power);
+}
+
+/* ── VR lever ───────────────────────────────────────────── */
+/*
+ * The physical lever on the VR deck drives the same charge state as a canvas
+ * drag, through a dedicated "vr" mode. Keeping it a mode (instead of faking
+ * pointer events at canvas coordinates) means the 2D input handlers can never
+ * fight with the headset, and the HUD/power meter stay in sync for free.
+ */
+
+function updateVrCharge(power) {
+  if (game.phase !== "charging" || game.chargeMode !== "vr") return;
+  const next = clamp(power, 0, 1);
+  if (Math.abs(next - game.charge) < 0.002) return;
+  game.charge = next;
+  if (game.charge > 0.03) game.pointerMoved = true;
+  setPowerUI(game.charge, "charging");
+  pulsePowerTick(game.charge);
+}
+
+function releaseVrCharge() {
+  if (game.phase !== "charging" || game.chargeMode !== "vr") return;
+  const power = clamp(game.charge, 0, 1);
+  game.charging = false;
+  game.chargeMode = null;
+  if (power < 0.04) {
+    game.charge = 0;
+    setPhase("ready");
+    setPowerUI(0, "ready");
+    setRoundBadge("ready", "待拉杆");
+    setPlayStatus("拉下弹簧，松手发射", "弱力擦顶，强力更远", true);
+    return;
+  }
+  launchBall(power);
+}
+
+function cancelVrCharge() {
+  if (game.phase !== "charging" || game.chargeMode !== "vr") return;
+  game.charge = 0;
+  game.charging = false;
+  game.chargeMode = null;
+  setPhase("ready");
+  setPowerUI(0, "ready");
+  setRoundBadge("ready", "待拉杆");
 }
 
 function launchBall(power) {
@@ -6077,11 +6133,13 @@ function update(now, dt) {
 }
 
 function frame(now) {
-  if (!loopRunning) return;
+  if (!loopRunning || externalClock) return;
   // Leaving the board (menu, shop, options) or backgrounding the app must not
   // keep a 60 Hz timer alive. The old loop only skipped drawing, which still
   // woke the CPU/GPU every vsync and warmed the phone for no reason.
-  if (gameScreen?.hidden || document.hidden) {
+  // `displayOnly` is the one exception: the VR view mirrors this canvas and
+  // must keep receiving frames even while the game screen is covered.
+  if ((gameScreen?.hidden && !displayOnly) || document.hidden) {
     stopLoop();
     return;
   }
@@ -6106,6 +6164,18 @@ const IDLE_FRAME_MS = 1000 / 30;
 let loopRunning = false;
 let rafHandle = 0;
 let lastPaintAt = 0;
+let displayOnly = false;
+let externalClock = false;
+
+function minBetAmount() {
+  return vrWallet ? 0 : 5;
+}
+
+/** Highest stake allowed right now. In VR the marbles are already spent. */
+function maxBetAmount() {
+  const min = minBetAmount();
+  return vrWallet ? 99 : Math.max(min, Math.min(99, game.marbles));
+}
 
 function isHighActivity() {
   if (game.phase === "starting" || game.phase === "charging" || game.phase === "flying" || game.phase === "returning") {
@@ -6122,7 +6192,7 @@ function isHighActivity() {
 
 function startLoop() {
   if (loopRunning) return;
-  if (gameScreen?.hidden || document.hidden) return;
+  if ((gameScreen?.hidden && !displayOnly) || document.hidden) return;
   loopRunning = true;
   lastFrame = performance.now();
   lastPaintAt = 0;
@@ -6239,6 +6309,19 @@ window.addEventListener("marble:game-shown", () => {
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) stopLoop();
   else startLoop();
+});
+
+// The VR view mirrors this canvas. When it opens from the menu the game
+// screen is not laid out, so the board keeps painting into its default
+// 720×1240 backing store and the overlay samples that as a texture.
+window.addEventListener("marble:vr-open", () => {
+  displayOnly = true;
+  if (!staticLayer) rebuildStaticLayer();
+  startLoop();
+});
+window.addEventListener("marble:vr-close", () => {
+  displayOnly = false;
+  if (gameScreen?.hidden) stopLoop();
 });
 
 /* ── Input ───────────────────────────────────────────────── */
@@ -6397,10 +6480,11 @@ window.addEventListener("keyup", (event) => {
 
 function setBet(value, announce = false) {
   if (game.phase !== "idle") return;
-  const maxBet = Math.max(5, Math.min(99, game.marbles));
-  const next = clamp(Math.round(Number(value) || 5), 5, maxBet);
+  const min = minBetAmount();
+  const maxBet = maxBetAmount();
+  const next = clamp(Math.round(Number(value) || min), min, maxBet);
   game.bet = next;
-  account.setBet(next);
+  if (next >= 5) account.setBet(next);
   updateBetUI();
   // setBet is persisted through the account store.
 }
@@ -6579,6 +6663,203 @@ window.addEventListener("blur", () => {
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) audio.payoutPourStop();
 });
+
+/* ── External command surface ────────────────────────────── */
+/*
+ * The VR deck (and any future presenter) drives the game through this small
+ * object instead of synthesising DOM clicks: commands in, one immutable state
+ * snapshot out. The 2D UI keeps working exactly as before.
+ */
+
+function hudStatus() {
+  if (vrWallet) {
+    if (game.phase === "idle") {
+      if (game.marbles < 5) return "弹珠不足 · 去兑换机";
+      return game.bet < 5 ? "往投珠口投珠" : "按开始开球";
+    }
+  } else if (!account.hasRun) {
+    return "正在准备机台…";
+  }
+  if (game.mode === "challenge") {
+    if (game.phase === "ready" || game.phase === "charging") return "拉下拉杆发射";
+    if (game.phase === "flying") return "开奖中…";
+    if (game.phase === "returning") return "回球中…";
+    return `第 ${challenge.index + 1} 关 · 剩 ${challenge.ballsLeft} 球`;
+  }
+  switch (game.phase) {
+    case "starting":
+      return "摆台中…";
+    case "ready":
+      return "拉下拉杆发射";
+    case "charging":
+      return `力度 ${Math.round(game.charge * 100)}%`;
+    case "flying":
+      return "开奖中…";
+    case "returning":
+      return "回球中…";
+    default:
+      return "按 START 开始下一球";
+  }
+}
+
+function hudResult() {
+  const result = game.result;
+  if (!result) return null;
+  if (result.destroyed) {
+    return { text: "深渊吞噬", win: false, payout: result.payout || 0, tickets: result.tickets || 0 };
+  }
+  if (result.won) {
+    return {
+      text: `中奖 ×${game.multiplier}`,
+      win: true,
+      payout: result.payout || 0,
+      tickets: result.tickets || 0,
+    };
+  }
+  return { text: "未中奖", win: false, payout: 0, tickets: 0 };
+}
+
+function externalState() {
+  const canPlay = Boolean(account.hasRun) || vrWallet;
+  const min = minBetAmount();
+  const maxBet = maxBetAmount();
+  return {
+    phase: game.phase,
+    mode: game.mode,
+    bet: game.bet,
+    maxBet,
+    marbles: game.marbles,
+    tickets: game.tickets,
+    coins: account.coins,
+    wallet: account.state.marbles,
+    table: activeTable?.name || "",
+    tableId: activeTable?.id || "",
+    round: game.round,
+    hasRun: Boolean(account.hasRun),
+    vr: vrWallet,
+    canStart:
+      canPlay && game.phase === "idle" && game.bet >= 5 && game.marbles >= game.bet,
+    canBet: canPlay && game.phase === "idle",
+    charge: game.phase === "charging" ? game.charge : 0,
+    status: hudStatus(),
+    result: hudResult(),
+    challenge: challenge.active ? { level: challenge.index + 1, balls: challenge.ballsLeft } : null,
+  };
+}
+
+export const engineApi = {
+  state: externalState,
+  adjustBet(delta) {
+    if (game.phase !== "idle" || (!account.hasRun && !vrWallet)) return game.bet;
+    if (vrWallet && delta > 0) {
+      // A marble dropped into the feeder is spent right away.
+      if (game.marbles <= 0) return game.bet;
+      setMarbles(game.marbles - 1);
+      game.bet = Math.min(99, game.bet + 1);
+      updateBetUI();
+      return game.bet;
+    }
+    setBet(game.bet + delta, true);
+    return game.bet;
+  },
+  /** VR plays from the global wallet: no run, no minimum stake. */
+  setVrWallet(on) {
+    const next = Boolean(on);
+    if (vrWallet === next) return;
+    vrWallet = next;
+    if (vrWallet) {
+      if (account.hasRun) account.endRun("vr");
+      game.marbles = account.playMarbles;
+      game.tickets = account.tickets;
+      marbleCountEl.textContent = String(game.marbles);
+      dockBalanceEl.textContent = String(game.marbles);
+      game.bet = 0;
+    } else {
+      game.bet = clamp(game.bet, 5, 99);
+    }
+    updateBetUI();
+  },
+  startRound() {
+    startRound();
+  },
+  leverGrab() {
+    return beginCharge("vr");
+  },
+  leverPull(power) {
+    updateVrCharge(power);
+  },
+  leverRelease() {
+    releaseVrCharge();
+  },
+  leverCancel() {
+    cancelVrCharge();
+  },
+  cashOut() {
+    if (game.phase !== "idle" || !account.hasRun) return false;
+    endRunSession("cashout");
+    return true;
+  },
+  /**
+   * WebXR pauses the page's requestAnimationFrame while an immersive session
+   * is running, so the viewer drives the loop from its XR frame callback.
+   */
+  setExternalClock(on) {
+    externalClock = Boolean(on);
+    if (externalClock) stopLoop();
+    else startLoop();
+  },
+  step(now, dt) {
+    if (!externalClock) return;
+    update(now, dt);
+    // The board texture is uploaded at ~30 Hz anyway; repainting the 2D canvas
+    // faster than that only burns battery inside the headset.
+    if (now - lastPaintAt >= 33) {
+      lastPaintAt = now;
+      draw(now);
+    }
+  },
+  /** One-button exchange used by the shop kiosk in the VR room. */
+  shopExchange() {
+    if (account.tickets > 0) {
+      const coins = account.exchangeTicketsToCoins(account.tickets);
+      return { ok: true, message: `+${coins} 游戏币` };
+    }
+    if (account.coins > 0) {
+      const marbles = account.buyMarblesWithCoins(account.coins);
+      return { ok: true, message: `+${marbles} 弹珠` };
+    }
+    if (account.canClaimRelief) {
+      const marbles = account.claimRelief();
+      return { ok: true, message: `+${marbles} 补助弹珠` };
+    }
+    return { ok: false, message: "没有可兑换的东西" };
+  },
+  /** Switch machine from the VR room; every machine is unlocked there. */
+  setTable(id) {
+    if (game.phase !== "idle") return { ok: false, reason: "busy" };
+    if (!getTable(id)) return { ok: false, reason: "unknown" };
+    // The account store re-applies its equipped table on every change (bet,
+    // marbles…), so the VR selection has to live in the account too.
+    if (!account.ownsTable(id)) account.purchaseTable(id, 0);
+    account.equipTable(id);
+    applyTable(id);
+    return { ok: activeTable.id === id, table: activeTable.id };
+  },
+  /**
+   * VR is a standalone mode: walking in starts a run. If the wallet cannot
+   * cover the minimum stake the house tops it up, so the player never gets
+   * sent back to the arcade menu first.
+   */
+  quickStart() {
+    // In VR there is no run at all — the wallet itself is the bankroll.
+    if (vrWallet) return { ok: true, started: false };
+    if (account.hasRun) return { ok: true, started: false };
+    const missing = economy.MIN_RUN_STAKE - account.state.marbles;
+    if (missing > 0) account.grantMarbles(missing);
+    const result = account.startRun(economy.MIN_RUN_STAKE);
+    return result.ok ? { ok: true, started: true } : { ok: false, reason: result.reason };
+  },
+};
 
 /* ── Debug API (handy for QA, harmless in production) ─────── */
 

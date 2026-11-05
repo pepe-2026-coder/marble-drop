@@ -1,0 +1,220 @@
+/* ============================================================
+   VR view: full-screen WebGL overlay, desktop preview chrome.
+   ============================================================ */
+
+.vr-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  overflow: hidden;
+  background: #04050a;
+  color: var(--cream);
+  overscroll-behavior: none;
+}
+
+.vr-screen canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+
+.vr-screen canvas.is-dragging {
+  cursor: grabbing;
+}
+
+.vr-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(120% 90% at 50% 42%, transparent 46%, rgba(2, 3, 7, 0.72) 100%);
+}
+
+.vr-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  padding:
+    calc(14px + env(safe-area-inset-top))
+    calc(16px + env(safe-area-inset-right))
+    18px
+    calc(16px + env(safe-area-inset-left));
+  background: linear-gradient(180deg, rgba(4, 5, 10, 0.86), rgba(4, 5, 10, 0));
+  pointer-events: none;
+}
+
+.vr-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.vr-kicker {
+  color: rgba(231, 181, 102, 0.72);
+  font-size: 8px;
+  font-weight: 750;
+  letter-spacing: 0.22em;
+}
+
+.vr-copy b {
+  color: var(--cream);
+  font-size: 16px;
+  font-weight: 750;
+  letter-spacing: 0.06em;
+}
+
+.vr-copy small {
+  margin-top: 3px;
+  color: rgba(244, 236, 220, 0.44);
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.vr-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  pointer-events: auto;
+}
+
+.vr-btn {
+  height: 36px;
+  padding: 0 15px;
+  border: 1px solid rgba(255, 238, 208, 0.16);
+  border-radius: 11px;
+  background: rgba(18, 14, 10, 0.8);
+  color: rgba(244, 236, 220, 0.72);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  transition:
+    border-color 180ms ease,
+    background 180ms ease,
+    color 180ms ease,
+    transform 160ms ease;
+}
+
+.vr-btn:hover {
+  border-color: rgba(231, 181, 102, 0.42);
+  color: var(--gold-pale);
+}
+
+.vr-btn:active {
+  transform: scale(0.96);
+}
+
+.vr-btn.is-primary {
+  border-color: rgba(231, 181, 102, 0.55);
+  background: linear-gradient(180deg, rgba(231, 181, 102, 0.9), rgba(184, 129, 55, 0.9));
+  color: #1a1206;
+  box-shadow: 0 6px 18px rgba(231, 181, 102, 0.22);
+}
+
+.vr-btn.is-primary:hover {
+  color: #1a1206;
+  filter: brightness(1.06);
+}
+
+.vr-note {
+  position: absolute;
+  left: 50%;
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  width: min(560px, calc(100vw - 32px));
+  margin: 0;
+  padding: 9px 14px;
+  border: 1px solid rgba(255, 240, 207, 0.1);
+  border-radius: 12px;
+  background: rgba(10, 9, 7, 0.72);
+  color: rgba(244, 236, 220, 0.52);
+  font-size: 9.5px;
+  line-height: 1.6;
+  text-align: center;
+  backdrop-filter: blur(8px);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+/* ── Options entry ───────────────────────────────────────── */
+
+.setting-go {
+  flex: 0 0 auto;
+  color: rgba(231, 181, 102, 0.8);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+
+.setting-row:hover .setting-go {
+  color: var(--gold-pale);
+}
+
+.setting-row em {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border: 1px solid rgba(231, 181, 102, 0.3);
+  border-radius: 999px;
+  color: rgba(231, 181, 102, 0.78);
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  vertical-align: 2px;
+}
+
+@media (max-width: 430px) {
+  .vr-copy b {
+    font-size: 14px;
+  }
+
+  .vr-btn {
+    height: 33px;
+    padding: 0 12px;
+    font-size: 10px;
+  }
+
+  .vr-note {
+    font-size: 9px;
+  }
+}
+
+/* ── Main menu entry ─────────────────────────────────────── */
+
+.menu-btn.is-vr {
+  border-color: rgba(122, 200, 255, 0.42);
+  background:
+    radial-gradient(120% 160% at 0% 0%, rgba(120, 200, 255, 0.16), transparent 50%),
+    linear-gradient(135deg, #16303f 0%, #0e2231 55%, #0a1622 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(160, 220, 255, 0.16),
+    0 14px 32px rgba(20, 80, 120, 0.26);
+  color: #d7efff;
+}
+
+.menu-btn.is-vr .menu-btn-icon {
+  border-color: rgba(140, 210, 255, 0.35);
+  background: rgba(80, 160, 220, 0.12);
+  color: #bfe6ff;
+}
+
+.menu-btn.is-vr strong {
+  color: #e6f6ff;
+}
+
+.menu-btn.is-vr small {
+  color: rgba(200, 230, 255, 0.62);
+}
+
+.menu-btn.is-vr .menu-btn-arrow {
+  color: rgba(190, 230, 255, 0.7);
+}

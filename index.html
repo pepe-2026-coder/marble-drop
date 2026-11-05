@@ -8,6 +8,7 @@
     <title>弹珠台 · MARBLE DROP</title>
     <link rel="stylesheet" href="./src/styles/game.css" />
     <link rel="stylesheet" href="./src/styles/shell.css" />
+    <link rel="stylesheet" href="./src/styles/vr.css" />
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%2315100b'/%3E%3Ccircle cx='32' cy='32' r='16' fill='%23d93b2c'/%3E%3Ccircle cx='26' cy='25' r='5' fill='%23ffd9b0' opacity='.8'/%3E%3C/svg%3E" />
   </head>
   <body>
@@ -88,6 +89,17 @@
               <span>
                 <strong>闯关模式</strong>
                 <small id="challengeSub">庄家 · 七 坐庄 · 6 关</small>
+              </span>
+            </span>
+            <span class="menu-btn-arrow" aria-hidden="true">→</span>
+          </button>
+
+          <button class="menu-btn menu-primary is-vr" id="vrModeBtn" type="button">
+            <span class="menu-btn-main">
+              <span class="menu-btn-icon" aria-hidden="true">◉</span>
+              <span>
+                <strong>VR 弹珠厅</strong>
+                <small id="vrModeSub">五台机台 · 坐下就玩 · 需要头显</small>
               </span>
             </span>
             <span class="menu-btn-arrow" aria-hidden="true">→</span>
@@ -673,6 +685,24 @@
       <div class="ws-panel" id="wsShopPanel" hidden></div>
       <p class="ws-footnote">技能点来自升级；一次性机关和母球皮肤用彩票购买。机关在发射前布阵。</p>
     </dialog>
+
+    <!-- ── VR 显示 ─────────────────────────────────────────── -->
+    <section class="vr-screen" id="vrScreen" hidden aria-label="VR 显示">
+      <canvas id="vrCanvas"></canvas>
+      <div class="vr-vignette" aria-hidden="true"></div>
+      <header class="vr-bar">
+        <div class="vr-copy">
+          <span class="vr-kicker">VR VIEW · EXPERIMENT</span>
+          <b>VR 弹珠厅</b>
+          <small id="vrHint">按 A 坐下 · 投珠框投珠 · START 开球 · 拉杆发射</small>
+        </div>
+        <div class="vr-actions">
+          <button class="vr-btn is-primary" id="vrEnter" type="button" hidden>进入 VR</button>
+          <button class="vr-btn" id="vrExit" type="button">退出</button>
+        </div>
+      </header>
+      <p class="vr-note" id="vrNote"></p>
+    </section>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 

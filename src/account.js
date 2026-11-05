@@ -305,7 +305,9 @@ class Account {
 
   get reliefAmount() {
     if (!this.canClaimRelief) return 0;
-    return Math.max(0, MIN_RUN_STAKE - this.state.marbles);
+    // A flat stake: topping up the deficit only (often 20–30 marbles) is not
+    // enough to actually play, so the house hands out the full 300.
+    return MIN_RUN_STAKE;
   }
 
   get canAffordMinimumBet() {
@@ -535,6 +537,18 @@ class Account {
     this.state.marbles += amount;
     this.#changed();
     return amount;
+  }
+
+  /**
+   * House grant. VR mode is a standalone mode, so it tops the wallet up to a
+   * starting stake instead of telling the player to go and play arcade first.
+   */
+  grantMarbles(amount = 0) {
+    const value = clampInt(amount, 0, 9_999_999);
+    if (value <= 0) return 0;
+    this.state.marbles += value;
+    this.#changed();
+    return value;
   }
 
   recordRound(won) {
